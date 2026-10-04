@@ -83,6 +83,13 @@ tr.best td { font-weight: 600; }
 .tip .r b { font-size: 13px; }
 .tip .r i { display: inline-block; width: 12px; height: 2px; }
 .key-line { display: inline-block; width: 16px; height: 0; border-top: 2px solid; }
+.advice { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.advice > div { border-left: 3px solid var(--grid); padding-left: 12px; }
+.advice > div.main { border-left-color: var(--series-1); }
+.advice h3 { margin: 0 0 4px; font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.advice p { margin: 0 0 4px; }
+.advice .pick { font-size: 16px; font-weight: 600; }
+.warn { color: var(--bad); }
 details summary { cursor: pointer; color: var(--ink-2); margin-top: 12px; }
 .empty { color: var(--ink-2); padding: 8px 0; }
 .banner { margin-top: 16px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); }
@@ -98,6 +105,11 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
   <div id="banner" class="banner" hidden></div>
 
   <div class="grid">
+    <section class="card" aria-labelledby="h-advice">
+      <h2 id="h-advice">Advice</h2>
+      <div id="advice"><div class="empty">Advice appears after the first daily run.</div></div>
+    </section>
+
     <section class="card span-7" aria-labelledby="h-best">
       <h2 id="h-best">Today's best variable deal</h2>
       <div id="best"><div class="empty">No prices collected yet. The first daily run will fill this in.</div></div>
@@ -329,11 +341,14 @@ function renderTop(d) {
 function renderSolar(d) {
   const deals = d.today_deals.filter(x => !x.flagged);
   if (!deals.length) return;
-  const sorted = deals.slice().sort((a, b) => (b.feedin_payment_eur_kwh ?? -1) - (a.feedin_payment_eur_kwh ?? -1));
-  fill("solar", table(["Supplier", "Pays / kWh fed back", "Feed-in costs"], sorted.map(x => el("tr", {},
+  const net = x => x.feedin_payment_eur_kwh != null && x.feedin_cost_eur_kwh != null ? x.feedin_payment_eur_kwh - x.feedin_cost_eur_kwh : null;
+  const sorted = deals.slice().sort((a, b) => (net(b) ?? -9) - (net(a) ?? -9));
+  fill("solar", table(["Supplier", "Pays / kWh", "Fee / kWh", "You keep / kWh", "Fee details"], sorted.map(x => el("tr", {},
     el("td", {}, x.supplier),
-    el("td", { class: "num" }, x.feedin_payment_eur_kwh == null ? "not published" : kwhFmt.format(x.feedin_payment_eur_kwh)),
-    el("td", {}, x.feedin_cost_desc || "—"))), [1]));
+    el("td", { class: "num" }, x.feedin_payment_eur_kwh == null ? "—" : kwhFmt.format(x.feedin_payment_eur_kwh)),
+    el("td", { class: "num" }, x.feedin_cost_eur_kwh == null ? "—" : kwhFmt.format(x.feedin_cost_eur_kwh)),
+    el("td", { class: "num" }, net(x) == null ? "—" : el("b", {}, kwhFmt.format(net(x)))),
+    el("td", { class: "muted" }, x.feedin_cost_desc || "—"))), [1, 2, 3]));
 }
 
 function renderBudget(d) {
@@ -346,25 +361,73 @@ function renderBudget(d) {
     line("Energy-tax refund (vermindering energiebelasting)", b.energy_tax_refund_eur_year, "− "),
     el("tr", { class: "best" }, el("td", {}, "Electricity total"), el("td", { class: "num" }, eur.format(b.total_eur_year))),
   ];
-  if (b.water_eur_year != null) rows.push(line(`Water Vitens (~${d.household.annual_water_m3} m³)`, b.water_eur_year));
+  if (b.water_eur_year != null) rows.push(line(`Water Vitens (~${d.household.annual_water_m3} m³, incl. tap-water tax)`, b.water_eur_year));
   fill("budget", table(["", "€ / year"], rows, [1]),
     el("p", { class: "muted", style: "margin:8px 0 0" },
       `Grid costs, tax refund and water are the same whichever supplier you pick. Checked ${fc.checked_at || "—"}`,
       w && w.checked_at ? ` / water ${w.checked_at}` : "", "."));
 }
 
+const AVAIL = { yes: "✓ available", no: "✕ not available", unknown: "? not confirmed" };
+
 function renderInternet(d) {
   const n = d.internet;
   if (!n || !n.offers.length) return;
-  fill("internet", table(["Provider", "Tech", "Speed", "€ / month", "First year", "Contract", "Promotion"], n.offers.map(o => el("tr", {},
+  const min = d.advice?.internet?.min_download_mbps ?? 100;
+  fill("internet", table(["Provider", "Tech", "Speed", "At your address", "€ / month", "Promotion", "First year", "Contract"], n.offers.map(o => el("tr", {},
     el("td", {}, link(o.source_url, o.provider), el("div", { class: "muted" }, o.product)),
     el("td", {}, o.technology),
     el("td", { class: "num" }, o.download_mbps ? `${o.download_mbps} Mbit/s` : "—"),
-    el("td", { class: "num" }, o.price_eur_month ? eur2.format(+o.price_eur_month) : "—"),
-    el("td", { class: "num" }, o.first_year_cost_eur ? eur.format(+o.first_year_cost_eur) : "—"),
-    el("td", { class: "num" }, o.contract_months ? `${o.contract_months} mo` : "—"),
-    el("td", { class: "muted" }, o.promo_desc))), [2, 3, 4, 5]),
-    el("p", { class: "muted", style: "margin:8px 0 0" }, `Checked ${dayFmt.format(parseDay(n.date))}.`));
+    el("td", { class: o.available_at_address === "no" ? "warn" : o.available_at_address === "yes" ? "" : "muted" }, AVAIL[o.available_at_address]),
+    el("td", { class: "num" }, eur2.format(o.price_eur_month)),
+    el("td", { class: "muted" }, o.promo_price_eur_month != null && o.promo_months
+      ? `${eur2.format(o.promo_price_eur_month)} for ${o.promo_months} mo` : o.promo_desc || "—"),
+    el("td", { class: "num" }, eur.format(o.first_year_eur)),
+    el("td", { class: "num" }, o.contract_months ? `${o.contract_months} mo` : "—"))), [2, 4, 6, 7]),
+    el("p", { class: "muted", style: "margin:8px 0 0" },
+      `Sorted by availability, then first-year cost (promotion and one-off costs included). At least ${min} Mbit/s is plenty for two people. Checked ${dayFmt.format(parseDay(n.date))}.`));
+}
+
+function renderAdvice(d) {
+  const a = d.advice || {}, w = d.water, hh = d.household;
+  const blocks = [];
+  const block = (title, main, ...ps) => el("div", { class: main ? "main" : "" }, el("h3", {}, title), ...ps.filter(Boolean));
+  if (a.energy) {
+    const e = a.energy;
+    blocks.push(block("Electricity", true,
+      el("p", { class: "pick" }, link(e.source_url, e.supplier), ` · ${eur.format(e.annual_eur)} / year`),
+      el("p", {}, `${e.product}: ${kwhFmt.format(e.kwh_price)} per kWh + ${eur2.format(e.fixed_supply_eur_month)} a month.`,
+        e.runner_up ? ` ${eur.format(e.gap_eur)} a year cheaper than ${e.runner_up}.` : ""),
+      el("p", { class: "muted" }, `Cheapest on ${e.days_best} of the last ${e.days_tracked} tracked day${e.days_tracked === 1 ? "" : "s"}. ` +
+        "A variable contract can be cancelled at any time with 30 days' notice and no fee, so you're never locked in.")));
+  }
+  if (a.internet) {
+    const i = a.internet;
+    blocks.push(block("Internet", true,
+      el("p", { class: "pick" }, link(i.source_url, `${i.provider} ${i.product}`), ` · ${eur.format(i.first_year_eur)} first year`),
+      el("p", {}, `${i.download_mbps} Mbit/s ${i.technology}, then ${eur2.format(i.price_eur_month)} a month` +
+        (i.contract_months ? `, ${i.contract_months}-month contract.` : ".")),
+      i.available_at_address === "yes" ? el("p", { class: "muted" }, "Confirmed available at your address.")
+        : el("p", { class: "warn" }, "Not yet confirmed at your address. Check the provider's postcode checker before ordering.")));
+  }
+  if (w && w.fixed_eur_year != null) {
+    const perM3 = w.eur_per_m3 + (w.tap_water_tax_eur_m3_excl_vat ?? 0) * (1 + (w.vat_rate ?? 0.09));
+    blocks.push(block("Water", false,
+      el("p", {}, "Vitens is the only water company for Wolfheze, so there's nothing to choose or switch."),
+      el("p", { class: "muted" }, `Prices are set once a year (1 January) and fixed for that year: ${eur2.format(w.fixed_eur_year)} a year + ` +
+        `${eur2.format(perM3)} per m³ including tap-water tax. About ${eur.format(d.budget?.water_eur_year ?? 0)} a year for ~${hh.annual_water_m3} m³.`)));
+  }
+  if (a.solar) {
+    const s = a.solar;
+    blocks.push(block("Solar panels, later", false,
+      el("p", {}, `${s.supplier} lets you keep the most per kWh you feed back: ${kwhFmt.format(s.net_eur_kwh)} net ` +
+        `(pays ${kwhFmt.format(s.feedin_payment_eur_kwh)}, charges ${kwhFmt.format(s.feedin_cost_eur_kwh)}).`),
+      el("p", { class: "muted" }, `Best of ${s.compared} suppliers with a flat feed-in fee. Net metering ends 1 Jan 2027, so this decides what panels earn.`)));
+  }
+  blocks.push(block("Timing", false,
+    el("p", {}, "Order internet about 4 weeks before you get the keys, because fiber activation can take 2–3 weeks."),
+    el("p", { class: "muted" }, "Sign the energy contract 2–4 weeks ahead with the key-handover date as start date, and write down the meter readings that day.")));
+  fill("advice", el("div", { class: "advice" }, blocks));
 }
 
 async function main() {
@@ -386,7 +449,7 @@ async function main() {
     renderBest(d); renderVs(d); renderChart(d);
     let t; addEventListener("resize", () => { clearTimeout(t); t = setTimeout(() => renderChart(d), 150); });
   }
-  renderTop(d); renderSolar(d); renderBudget(d); renderInternet(d);
+  renderAdvice(d); renderTop(d); renderSolar(d); renderBudget(d); renderInternet(d);
 }
 main();
 </script>

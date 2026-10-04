@@ -1,3 +1,3 @@
-date,provider,product,technology,download_mbps,price_eur_month,first_year_cost_eur,contract_months,promo_desc,source_url
-2026-10-04,Delta,Glasvezel 500,fiber,500,42.50,,24,"Promo EUR 30/month; address-level availability NOT verified (Delta fiber built in Wolfheze area)",https://www.delta.nl/internet/glasvezel/
-2026-10-04,Delta,Glasvezel 1 Gig,fiber,1000,52.50,,24,"Promo EUR 30/month; address-level availability NOT verified (Delta fiber built in Wolfheze area)",https://www.delta.nl/internet/glasvezel/
+date,provider,product,technology,download_mbps,upload_mbps,price_eur_month,promo_price_eur_month,promo_months,one_off_eur,contract_months,available_at_address,promo_desc,source_url
+2026-10-04,Delta,Glasvezel 500,fiber,500,,42.50,,,,24,unknown,Promo EUR 30/month; address-level availability NOT verified (Delta fiber built in Wolfheze area),https://www.delta.nl/internet/glasvezel/
+2026-10-04,Delta,Glasvezel 1 Gig,fiber,1000,,52.50,,,,24,unknown,Promo EUR 30/month; address-level availability NOT verified (Delta fiber built in Wolfheze area),https://www.delta.nl/internet/glasvezel/

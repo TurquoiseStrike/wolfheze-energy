@@ -129,6 +129,63 @@ class UpdateTest(unittest.TestCase):
         self.assertTrue(a["incomplete"])
         self.assertIsNone(a["structural_annual_eur"])
 
+    def test_fixed_charge_units_and_solar_advice(self):
+        d = "2026-10-01"
+        rows = [row(d, s) for s in SUPPLIERS[2:]]
+        rows.append(row(d, "A", fixed="", fixed_supply_eur_day="0.36", feedin_payment_eur_kwh="0.12", feedin_cost_eur_kwh="0.04"))
+        rows.append(row(d, "B", fixed="", fixed_supply_eur_year="120", feedin_payment_eur_kwh="0.15", feedin_cost_eur_kwh="0.14"))
+        write(self.dir / "energy.csv", rows)
+        res = run(self.dir)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        dash = json.loads((self.dir / "dashboard.json").read_text(encoding="utf-8"))
+        by = {x["supplier"]: x for x in dash["today_deals"]}
+        self.assertAlmostEqual(by["A"]["fixed_supply_eur_month"], round(0.36 * 365 / 12, 2))
+        self.assertAlmostEqual(by["B"]["fixed_supply_eur_month"], 10.0)
+        # B pays more per kWh, but A keeps more after the fee.
+        self.assertEqual(dash["advice"]["solar"]["supplier"], "A")
+        self.assertAlmostEqual(dash["advice"]["solar"]["net_eur_kwh"], 0.08)
+        # C..H at 6/mo (EUR 947/yr) beat B at 10/mo and A at ~10.95/mo; ties keep input order.
+        self.assertEqual(dash["advice"]["energy"]["supplier"], "C")
+        self.assertEqual(dash["advice"]["energy"]["runner_up"], "D")
+        self.assertEqual(dash["advice"]["energy"]["gap_eur"], 0)
+
+    def test_two_fixed_units_rejected(self):
+        write(self.dir / "energy.csv", [row("2026-10-01", "A", fixed="6", fixed_supply_eur_year="72")])
+        res = run(self.dir)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("only one", res.stderr)
+
+    def test_internet_first_year_sorting_and_advice(self):
+        write(self.dir / "energy.csv", [])
+        fields = update.INTERNET_FIELDS
+        offers = [
+            # 30/mo for 6 months then 50, plus 25 one-off -> 180 + 300 + 25 = 505
+            {"provider": "Fiber", "download_mbps": "500", "price_eur_month": "50", "promo_price_eur_month": "30",
+             "promo_months": "6", "one_off_eur": "25", "available_at_address": "yes"},
+            # cheapest, but availability unknown -> sorted after confirmed offers
+            {"provider": "Maybe", "download_mbps": "200", "price_eur_month": "35", "available_at_address": "unknown"},
+            # too slow for the advice
+            {"provider": "Slow", "download_mbps": "50", "price_eur_month": "20", "available_at_address": "yes"},
+            {"provider": "Nope", "download_mbps": "1000", "price_eur_month": "10", "available_at_address": "no"},
+        ]
+        with (self.dir / "internet.csv").open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            for o in offers:
+                w.writerow({k: "" for k in fields} | {"date": "2026-10-05", "product": "x", "technology": "fiber",
+                                                      "source_url": "https://example.com"} | o)
+        (self.dir / "water.json").write_text(json.dumps({"fixed_eur_year": 56.68, "eur_per_m3": 1.34,
+                                                         "vat_rate": 0.09, "tap_water_tax_eur_m3_excl_vat": 0.437}))
+        res = run(self.dir)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        dash = json.loads((self.dir / "dashboard.json").read_text(encoding="utf-8"))
+        offers = dash["internet"]["offers"]
+        self.assertEqual([o["provider"] for o in offers], ["Slow", "Fiber", "Maybe", "Nope"])
+        self.assertAlmostEqual(offers[1]["first_year_eur"], 505.0)
+        self.assertEqual(dash["advice"]["internet"]["provider"], "Fiber")
+        self.assertAlmostEqual(update.water_cost(json.loads((self.dir / "water.json").read_text()), 90),
+                               round(56.68 + (1.34 + 0.437 * 1.09) * 90, 2))
+
     def test_missing_source_url_fails_without_writing(self):
         write(self.dir / "energy.csv", [row("2026-10-01", "A", source_url="")])
         res = run(self.dir)

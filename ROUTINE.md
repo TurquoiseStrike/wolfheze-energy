@@ -48,10 +48,20 @@ Tool tips:
 
 ## What to do each run
 
+### 0. Start from what worked last time
+`sources.json` lists, per supplier and internet provider, the URLs that gave usable prices on earlier runs. Try those
+first: tariff sheets often keep the same URL pattern, with only the date in the file name changing. At the end of the
+run, update `sources.json` with every URL that worked today, and remove ones that are dead.
+
 ### 1. Energy: every day
 For each supplier in `config.json` → `suppliers`, find the current **variable** (*variabel*, "modelcontract variabel")
 electricity tariff for a **new customer**, for the Liander grid area / postcode area 6874. See "How to research"
 above for which sources to use.
+
+**The fixed charge matters as much as the kWh price.** Without it a supplier can't be ranked. For every supplier where
+you only found the kWh price, make a dedicated attempt at its modelcontract tariff sheet before giving up. Suppliers
+publish the fixed charge in different units (per month, per day, per year). Copy it in the unit shown, into the
+matching column.
 
 Also do one quick search for a cheaper variable offer from a supplier not on the list. If you find one, include it.
 
@@ -65,10 +75,14 @@ Append one row per supplier to `docs/data/energy.csv`:
 | `kwh_single` | single tariff (*enkeltarief*) €/kWh. Leave empty if the supplier only lists normal/off-peak |
 | `kwh_normal`, `kwh_dal` | normal (*normaal*) / off-peak (*dal*) €/kWh. Only when no single tariff is listed |
 | `tax_basis` | `incl` if the price includes energy tax (*energiebelasting*) and VAT (most pages), `excl_eb` if it includes VAT but not energy tax |
-| `fixed_supply_eur_month` | fixed monthly supply charge (*vaste leveringskosten*) incl. VAT (**not** grid costs). Empty if not found today (see honesty rules) |
+| `fixed_supply_eur_month` | fixed supply charge (*vaste leveringskosten*) incl. VAT, **if published per month** (**not** grid costs) |
+| `fixed_supply_eur_day` | the same charge, **if published per day** (e.g. "€0.36121 per dag") |
+| `fixed_supply_eur_year` | the same charge, **if published per year** |
+| | Fill exactly one of these three, in the unit the supplier uses. `update.py` converts it. Leave all three empty if not found today (see honesty rules) |
 | `welcome_bonus_eur` | welcome bonus / cashback for this product, 0 if none |
 | `feedin_payment_eur_kwh` | payment per kWh fed back to the grid (*terugleververgoeding*), empty if not published |
-| `feedin_cost_desc` | short text on any feed-in fee (*terugleverkosten*), e.g. "€0.12/kWh above 1,000 kWh", "staffel €X–€Y/month", "none" |
+| `feedin_cost_eur_kwh` | feed-in fee per kWh (*terugleverkosten*), **only if it's one flat €/kWh rate**. Empty for tiered (*staffel*) or monthly fees |
+| `feedin_cost_desc` | short text on the feed-in fee, e.g. "0.12/kWh", "staffel €X–€Y/month by kWh fed back", "none" |
 | `source_url` | page you read the kWh price from |
 | `fixed_source_url` | page you read the fixed charge from, only if it's a different page. Otherwise leave empty |
 | `checked_at` | ISO timestamp of when you read it |
@@ -76,12 +90,34 @@ Append one row per supplier to `docs/data/energy.csv`:
 
 Use proper CSV quoting for any text that contains commas.
 
-### 2. Internet: Mondays only (or if `docs/data/internet.csv` has no rows from the last 7 days)
-Use the address from the routine prompt to check which providers can deliver there (fiber, cable, DSL). Take
-**available** offers of ≥ 500 Mbit/s, or the fastest one available if that's slower. Append rows to `docs/data/internet.csv`:
-`date, provider, product, technology, download_mbps, price_eur_month, first_year_cost_eur, contract_months, promo_desc, source_url`.
-`first_year_cost_eur` = the first-year total the provider itself advertises, including one-off fees. If the provider doesn't
-publish one, leave it empty. Don't calculate it.
+### 2. Internet: Mondays only (or if `docs/data/internet.csv` has fewer than 5 providers in the last 7 days)
+The household is 2 adults with no TV package needed (see `config.json` → `internet.need`). Anything from
+`internet.min_download_mbps` (100 Mbit/s) up is fine.
+
+1. **Find what's available at the address** from the routine prompt. Use the availability checkers in
+   `config.json` → `internet.availability_checkers` and the providers' own postcode checks. Most need the postcode +
+   house number; some also show the street name. Note which networks reach the address: fiber (which network:
+   Delta Fiber, KPN/Glaspoort, ...), cable (Ziggo), DSL/VDSL (KPN network), and 5G/4G home internet.
+2. **For each provider in `internet.providers`** (plus any other provider the checker shows for the address), record
+   its **cheapest offer of ≥ 100 Mbit/s**, and also its next speed tier if that costs at most €5 a month more. Internet
+   only. Skip TV/bundle-only offers.
+3. Append one row per offer to `docs/data/internet.csv`:
+
+| column | meaning |
+|---|---|
+| `date` | today |
+| `provider`, `product` | e.g. "KPN", "Internet 100" |
+| `technology` | `fiber`, `cable`, `dsl`, or `5g` |
+| `download_mbps`, `upload_mbps` | as advertised |
+| `price_eur_month` | regular monthly price after any promotion |
+| `promo_price_eur_month`, `promo_months` | promotional price and how many months it lasts. Empty if no promotion |
+| `one_off_eur` | one-off costs (activation, installation, shipping). 0 if none |
+| `contract_months` | 12, 24, or 1 for monthly cancellable |
+| `available_at_address` | `yes` only if a checker confirmed it **for this house number**, `no` if a checker said it's not available, otherwise `unknown` |
+| `promo_desc` | short text on any other promotion (gift, discount code) |
+| `source_url` | page with the offer |
+
+`update.py` calculates the first-year cost from these columns. Don't calculate it yourself.
 
 ### 3. Fixed costs + water: first run of each month (or if `checked_at` in those files is > 31 days old)
 Update `docs/data/fixed_costs.json`:
@@ -94,11 +130,14 @@ Update `docs/data/fixed_costs.json`:
   "sources": ["<url>", "<url>"]
 }
 ```
-Update `docs/data/water.json` with Vitens' current tariffs:
+Update `docs/data/water.json` with Vitens' current tariffs (only the fields below; keep the file's other fields):
 ```json
-{ "checked_at": "YYYY-MM-DD", "supplier": "Vitens", "fixed_eur_year": <vastrecht incl. VAT & taxes>,
-  "eur_per_m3": <per m³ incl. VAT & taxes>, "source_url": "<url>", "notes": "" }
+{ "checked_at": "YYYY-MM-DD", "supplier": "Vitens", "fixed_eur_year": <capaciteitstarief/vastrecht per year incl. 9% VAT>,
+  "eur_per_m3": <drinkwater per m³ incl. 9% VAT, excl. BoL>, "vat_rate": 0.09,
+  "tap_water_tax_eur_m3_excl_vat": <belasting op leidingwater per m³ from the Belastingdienst, excl. VAT>,
+  "source_url": "<Vitens tariff sheet>", "tap_water_tax_source_url": "<Belastingdienst page>", "notes": "" }
 ```
+Vitens' tariffs change once a year on 1 January. In January, check that you have the new year's sheet.
 Copy these numbers from official pages (Liander, Belastingdienst / Rijksoverheid, Vitens). Never write a value you didn't see.
 
 ### 4. Recompute and publish

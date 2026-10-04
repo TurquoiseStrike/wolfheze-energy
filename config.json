@@ -3,11 +3,25 @@
     "location": "Wolfheze (gemeente Renkum, Gelderland)",
     "grid_operator": "Liander",
     "water_company": "Vitens",
+    "persons": 2,
     "all_electric": true,
     "annual_kwh": 3500,
     "dual_tariff_normal_share": 0.6,
-    "annual_water_m3": 80,
+    "annual_water_m3": 90,
     "solar": false
+  },
+  "internet": {
+    "min_download_mbps": 100,
+    "need": "Decent home internet for 2 adults: streaming, video calls, working from home. No TV package needed.",
+    "providers": [
+      "KPN", "Odido", "Ziggo", "Delta", "Youfone", "Online.nl", "Freedom Internet", "Budget Thuis", "Caiway"
+    ],
+    "availability_checkers": [
+      "https://www.internetten.nl",
+      "https://www.breedbandwinkel.nl",
+      "https://www.overstappen.nl/internet",
+      "https://www.independer.nl/internet"
+    ]
   },
   "comparison": {
     "contract_type": "variable",

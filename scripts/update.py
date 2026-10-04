@@ -18,16 +18,22 @@ ROOT = Path(__file__).resolve().parent.parent
 
 ENERGY_FIELDS = [
     "date", "supplier", "product", "kwh_single", "kwh_normal", "kwh_dal",
-    "tax_basis", "fixed_supply_eur_month", "welcome_bonus_eur",
-    "feedin_payment_eur_kwh", "feedin_cost_desc", "source_url", "fixed_source_url", "checked_at", "notes",
+    "tax_basis", "fixed_supply_eur_month", "fixed_supply_eur_day", "fixed_supply_eur_year", "welcome_bonus_eur",
+    "feedin_payment_eur_kwh", "feedin_cost_eur_kwh", "feedin_cost_desc", "source_url", "fixed_source_url",
+    "checked_at", "notes",
 ]
+ENERGY_REQUIRED = ["date", "supplier", "source_url"]
 # Fixed supply charges usually change only on 1 Jan / 1 Jul, so a sourced value
 # from an earlier day may stand in when today's research didn't find one.
 FIXED_CARRY_DAYS = 92
 INTERNET_FIELDS = [
-    "date", "provider", "product", "technology", "download_mbps",
-    "price_eur_month", "first_year_cost_eur", "contract_months", "promo_desc", "source_url",
+    "date", "provider", "product", "technology", "download_mbps", "upload_mbps",
+    "price_eur_month", "promo_price_eur_month", "promo_months", "one_off_eur", "contract_months",
+    "available_at_address", "promo_desc", "source_url",
 ]
+INTERNET_REQUIRED = ["date", "provider", "price_eur_month", "source_url"]
+AVAILABILITY = ("yes", "no", "unknown")
+AVAILABILITY_RANK = {"yes": 0, "unknown": 1, "no": 2}  # display order: confirmed, unconfirmed, unavailable
 DAILY_BEST_FIELDS = [
     "date", "status", "n_suppliers", "best_supplier", "best_product", "kwh_price",
     "fixed_supply_eur_month", "structural_annual_eur", "year1_annual_eur",
@@ -39,15 +45,16 @@ class RowError(Exception):
     pass
 
 
-def read_csv(path, fields):
+def read_csv(path, fields, required):
+    """Rows as dicts with every field present; optional columns may be absent from the file."""
     if not path.exists():
         return []
     with path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
-        missing = [c for c in fields if c not in (reader.fieldnames or [])]
+        missing = [c for c in required if c not in (reader.fieldnames or [])]
         if missing:
             raise RowError(f"{path.name}: missing columns {missing}")
-        return list(reader)
+        return [{k: (r.get(k) or "") for k in fields} for r in reader]
 
 
 def num(value, field, row_no, required=False):
@@ -93,6 +100,20 @@ def effective_kwh_price(row, row_no, normal_share, fixed_costs):
     raise RowError(f"row {row_no}: tax_basis must be 'incl' or 'excl_eb', got {basis!r}")
 
 
+def monthly_fixed(row, row_no):
+    """Fixed supply charge per month, from whichever unit the supplier published."""
+    month = num(row["fixed_supply_eur_month"], "fixed_supply_eur_month", row_no)
+    day = num(row["fixed_supply_eur_day"], "fixed_supply_eur_day", row_no)
+    year = num(row["fixed_supply_eur_year"], "fixed_supply_eur_year", row_no)
+    if sum(v is not None for v in (month, day, year)) > 1:
+        raise RowError(f"row {row_no}: fill only one of fixed_supply_eur_month / _day / _year")
+    if day is not None:
+        return day * 365 / 12
+    if year is not None:
+        return year / 12
+    return month
+
+
 def load_energy(rows, cfg, fixed_costs):
     """Validate raw rows; keep the latest check per (date, supplier)."""
     hh, cmp_ = cfg["household"], cfg["comparison"]
@@ -112,11 +133,12 @@ def load_energy(rows, cfg, fixed_costs):
             "supplier": supplier,
             "product": row["product"].strip(),
             "kwh_price": round(effective_kwh_price(row, i, hh["dual_tariff_normal_share"], fixed_costs), 5),
-            "fixed_supply_eur_month": num(row["fixed_supply_eur_month"], "fixed_supply_eur_month", i),
+            "fixed_supply_eur_month": monthly_fixed(row, i),
             "fixed_source_url": fixed_url or row["source_url"].strip(),
             "fixed_carried_from": None,
             "welcome_bonus_eur": round(num(row["welcome_bonus_eur"], "welcome_bonus_eur", i) or 0.0, 2),
             "feedin_payment_eur_kwh": num(row["feedin_payment_eur_kwh"], "feedin_payment_eur_kwh", i),
+            "feedin_cost_eur_kwh": num(row["feedin_cost_eur_kwh"], "feedin_cost_eur_kwh", i),
             "feedin_cost_desc": row["feedin_cost_desc"].strip(),
             "source_url": row["source_url"].strip(),
             "checked_at": row["checked_at"].strip(),
@@ -214,6 +236,92 @@ def deal_json(x):
     return {k: (v.isoformat() if isinstance(v, date) else v) for k, v in x.items()}
 
 
+def load_internet(rows):
+    """Validate offers and compute first-year cost from the published promo terms."""
+    offers = []
+    for i, r in enumerate(rows, start=2):
+        if not r["source_url"].startswith("http"):
+            raise RowError(f"internet row {i}: source_url missing or invalid")
+        parse_date(r["date"], i)
+        avail = (r["available_at_address"] or "unknown").strip().lower()
+        if avail not in AVAILABILITY:
+            raise RowError(f"internet row {i}: available_at_address must be one of {AVAILABILITY}")
+        price = num(r["price_eur_month"], "price_eur_month", i, required=True)
+        promo = num(r["promo_price_eur_month"], "promo_price_eur_month", i)
+        promo_months = num(r["promo_months"], "promo_months", i)
+        one_off = num(r["one_off_eur"], "one_off_eur", i) or 0.0
+        if promo is not None and promo_months is not None:
+            pm = min(int(promo_months), 12)
+            first_year = promo * pm + price * (12 - pm) + one_off
+        else:
+            first_year = price * 12 + one_off
+        offers.append({
+            "date": r["date"].strip(), "provider": r["provider"].strip(), "product": r["product"].strip(),
+            "technology": r["technology"].strip(),
+            "download_mbps": num(r["download_mbps"], "download_mbps", i),
+            "upload_mbps": num(r["upload_mbps"], "upload_mbps", i),
+            "price_eur_month": price, "promo_price_eur_month": promo, "promo_months": promo_months,
+            "one_off_eur": one_off, "contract_months": num(r["contract_months"], "contract_months", i),
+            "available_at_address": avail, "promo_desc": r["promo_desc"].strip(),
+            "source_url": r["source_url"].strip(), "first_year_eur": round(first_year, 2),
+        })
+    if not offers:
+        return None
+    last = max(o["date"] for o in offers)
+    latest = sorted((o for o in offers if o["date"] == last),
+                    key=lambda o: (AVAILABILITY_RANK[o["available_at_address"]], o["first_year_eur"]))
+    return {"date": last, "offers": latest}
+
+
+def water_cost(water, m3):
+    """Yearly water bill: fixed charge + per-m3 tariff + tap water tax (BoL), all incl. VAT."""
+    if not water or water.get("fixed_eur_year") is None or water.get("eur_per_m3") is None:
+        return None
+    tax = water.get("tap_water_tax_eur_m3_excl_vat")
+    tax_incl = tax * (1 + water.get("vat_rate", 0.09)) if tax is not None else 0.0
+    return round(water["fixed_eur_year"] + (water["eur_per_m3"] + tax_incl) * m3, 2)
+
+
+def advice(history, today_deals, internet, cfg):
+    """Structured recommendations; the dashboard turns these into sentences."""
+    out = {}
+    if history:
+        t = history[-1]
+        recent = history[-30:]
+        ranked = [x for x in today_deals
+                  if x["date"] == t["date"] and not x["flagged"] and not x["incomplete"]]
+        runner = ranked[1] if len(ranked) > 1 else None
+        out["energy"] = {
+            "supplier": t["best_supplier"], "product": t["best_product"], "annual_eur": t["structural_annual_eur"],
+            "kwh_price": t["kwh_price"], "fixed_supply_eur_month": t["fixed_supply_eur_month"],
+            "days_best": sum(h["best_supplier"] == t["best_supplier"] for h in recent), "days_tracked": len(recent),
+            "runner_up": runner["supplier"] if runner else None,
+            "gap_eur": round(runner["structural_annual_eur"] - t["structural_annual_eur"], 2) if runner else None,
+            "source_url": next((x["source_url"] for x in ranked if x["supplier"] == t["best_supplier"]), None),
+        }
+        # Solar: compare what you keep per kWh fed back (payment minus feed-in fee). Only suppliers
+        # with a flat per-kWh fee are comparable; tiered fees stay in the table as text.
+        solar = [x for x in today_deals if x["date"] == t["date"] and not x["flagged"]
+                 and x["feedin_payment_eur_kwh"] is not None and x["feedin_cost_eur_kwh"] is not None]
+        if solar:
+            s = max(solar, key=lambda x: x["feedin_payment_eur_kwh"] - x["feedin_cost_eur_kwh"])
+            out["solar"] = {"supplier": s["supplier"], "feedin_payment_eur_kwh": s["feedin_payment_eur_kwh"],
+                            "feedin_cost_eur_kwh": s["feedin_cost_eur_kwh"],
+                            "net_eur_kwh": round(s["feedin_payment_eur_kwh"] - s["feedin_cost_eur_kwh"], 5),
+                            "compared": len(solar)}
+    if internet:
+        min_mbps = cfg["internet"]["min_download_mbps"]
+        fast_enough = [o for o in internet["offers"]
+                       if (o["download_mbps"] or 0) >= min_mbps and o["available_at_address"] != "no"]
+        if fast_enough:
+            pick = fast_enough[0]  # already sorted: confirmed availability first, then first-year cost
+            out["internet"] = {**{k: pick[k] for k in ("provider", "product", "technology", "download_mbps",
+                                                        "first_year_eur", "price_eur_month", "contract_months",
+                                                        "available_at_address", "source_url")},
+                               "min_download_mbps": min_mbps}
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=str(ROOT / "docs" / "data"))
@@ -225,8 +333,8 @@ def main():
     water = load_json(data / "water.json", None)
 
     try:
-        by_date = load_energy(read_csv(data / "energy.csv", ENERGY_FIELDS), cfg, fixed_costs)
-        internet_rows = read_csv(data / "internet.csv", INTERNET_FIELDS)
+        by_date = load_energy(read_csv(data / "energy.csv", ENERGY_FIELDS, ENERGY_REQUIRED), cfg, fixed_costs)
+        internet_latest = load_internet(read_csv(data / "internet.csv", INTERNET_FIELDS, INTERNET_REQUIRED))
     except RowError as e:
         print(f"VALIDATION ERROR: {e}", file=sys.stderr)
         return 1
@@ -236,17 +344,6 @@ def main():
 
     latest_date = max(by_date) if by_date else None
     today_deals = [deal_json(x) for x in by_date.get(latest_date, [])]
-
-    internet_latest = None
-    if internet_rows:
-        last = max(r["date"] for r in internet_rows)
-        internet_latest = {
-            "date": last,
-            "offers": sorted(
-                (r for r in internet_rows if r["date"] == last),
-                key=lambda r: float(r["first_year_cost_eur"] or r["price_eur_month"] or 0),
-            ),
-        }
 
     budget = None
     if history and fixed_costs:
@@ -260,9 +357,9 @@ def main():
                 "energy_tax_refund_eur_year": refund,
                 "total_eur_year": round(latest["structural_annual_eur"] + grid - refund, 2),
             }
-    if budget is not None and water and water.get("fixed_eur_year") is not None and water.get("eur_per_m3") is not None:
-        budget["water_eur_year"] = round(
-            water["fixed_eur_year"] + water["eur_per_m3"] * cfg["household"]["annual_water_m3"], 2)
+    water_year = water_cost(water, cfg["household"]["annual_water_m3"])
+    if budget is not None and water_year is not None:
+        budget["water_eur_year"] = water_year
 
     dashboard = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -276,6 +373,7 @@ def main():
         "water": water,
         "budget": budget,
         "internet": internet_latest,
+        "advice": advice(history, today_deals, internet_latest, cfg),
     }
     (data / "dashboard.json").write_text(json.dumps(dashboard, indent=1, ensure_ascii=False), encoding="utf-8")
 
