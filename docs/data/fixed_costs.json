@@ -1,0 +1,7 @@
+{
+  "checked_at": "2026-10-04",
+  "grid_costs_eur_year": 478.0420,
+  "energy_tax_refund_eur_year": 629,
+  "energy_tax_eur_kwh_incl_vat": 0.11085,
+  "sources": ["https://www.liander.nl/-/media/files/tarieven/consument/2026/jaarlijkse-netwerkkosten-stroom-2026-v10.pdf", "https://www.rijksoverheid.nl/onderwerpen/energie-thuis/vraag-en-antwoord/opbouw-energierekening"]
+}
