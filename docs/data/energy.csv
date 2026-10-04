@@ -1,1 +1,1 @@
-date,supplier,product,kwh_single,kwh_normal,kwh_dal,tax_basis,fixed_supply_eur_month,welcome_bonus_eur,feedin_payment_eur_kwh,feedin_cost_desc,source_url,checked_at,notes
+date,supplier,product,kwh_single,kwh_normal,kwh_dal,tax_basis,fixed_supply_eur_month,welcome_bonus_eur,feedin_payment_eur_kwh,feedin_cost_desc,source_url,fixed_source_url,checked_at,notes

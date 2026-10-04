@@ -308,15 +308,20 @@ function niceStep(raw) {
 function renderTop(d) {
   const deals = d.today_deals;
   if (!deals.length) return;
-  const rows = deals.map((x, i) => el("tr", { class: i === 0 && !x.flagged ? "best" : "" },
-    el("td", {}, x.flagged ? "—" : i + 1),
+  const ranked = x => !x.flagged && !x.incomplete;
+  const money = (fmt, v) => v == null ? "—" : fmt.format(v);
+  const note = x => x.flagged ? "price out of range, check"
+    : x.incomplete ? "fixed charge not found, not ranked"
+    : [x.fixed_carried_from ? `fixed charge from ${x.fixed_carried_from}` : "", x.notes].filter(Boolean).join(" · ");
+  const rows = deals.map((x, i) => el("tr", { class: i === 0 && ranked(x) ? "best" : "" },
+    el("td", {}, ranked(x) ? i + 1 : "—"),
     el("td", {}, link(x.source_url, x.supplier), el("div", { class: "muted", style: "font-weight:400" }, x.product)),
     el("td", { class: "num" }, kwhFmt.format(x.kwh_price)),
-    el("td", { class: "num" }, eur2.format(x.fixed_supply_eur_month)),
-    el("td", { class: "num" }, eur.format(x.structural_annual_eur)),
+    el("td", { class: "num" }, x.fixed_supply_eur_month == null ? "—" : link(x.fixed_source_url, eur2.format(x.fixed_supply_eur_month))),
+    el("td", { class: "num" }, money(eur, x.structural_annual_eur)),
     el("td", { class: "num" }, x.welcome_bonus_eur ? eur.format(x.welcome_bonus_eur) : "—"),
-    el("td", { class: "num" }, eur.format(x.year1_annual_eur)),
-    el("td", { class: "muted" }, x.flagged ? "price out of range, check" : x.notes)));
+    el("td", { class: "num" }, money(eur, x.year1_annual_eur)),
+    el("td", { class: "muted" }, note(x))));
   fill("top", table(["#", "Supplier", "€/kWh", "Fixed / mo", "Annual", "Bonus", "Year 1", "Notes"], rows, [2, 3, 4, 5, 6]),
     el("p", { class: "muted", style: "margin:8px 0 0" }, "Ranked by annual cost without bonuses. Year 1 subtracts the welcome bonus."));
 }
@@ -378,10 +383,10 @@ async function main() {
       `Best variable electricity deal for ${d.household.location}, ${d.household.annual_kwh.toLocaleString("nl-NL")} kWh/year. Updated ${dayFmt.format(new Date(d.generated_at))}.`;
   }
   if (d.today) {
-    renderBest(d); renderVs(d); renderChart(d); renderTop(d); renderSolar(d);
+    renderBest(d); renderVs(d); renderChart(d);
     let t; addEventListener("resize", () => { clearTimeout(t); t = setTimeout(() => renderChart(d), 150); });
   }
-  renderBudget(d); renderInternet(d);
+  renderTop(d); renderSolar(d); renderBudget(d); renderInternet(d);
 }
 main();
 </script>

@@ -107,6 +107,28 @@ class UpdateTest(unittest.TestCase):
         self.assertEqual(h["n_suppliers"], "7")  # 8 suppliers minus flagged A
         self.assertEqual(h["status"], "partial")  # 7 < min 8
 
+    def test_fixed_charge_carry_forward_and_incomplete(self):
+        rows = [row("2026-10-01", s) for s in SUPPLIERS]
+        rows += [row("2026-10-02", s, fixed="") for s in SUPPLIERS[:7]]  # A..G: fixed missing today
+        rows.append(row("2026-10-02", "H", fixed="5", fixed_source_url="https://example.com/H-pdf"))
+        rows.append(row("2026-10-02", "New", kwh="0.20", fixed=""))  # cheapest kWh, but no fixed -> not ranked
+        rows.append(row("2027-01-15", "A", fixed=""))  # > 92 days later -> no carry
+        write(self.dir / "energy.csv", rows)
+        res = run(self.dir)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("INCOMPLETE", res.stderr)
+
+        h = {r["date"]: r for r in self.history()}
+        day2 = h["2026-10-02"]
+        self.assertEqual(day2["status"], "full")  # 7 carried + H
+        self.assertEqual(day2["best_supplier"], "H")
+        self.assertNotIn("2027-01-15", h)  # A's only row that day is incomplete
+
+        dash = json.loads((self.dir / "dashboard.json").read_text(encoding="utf-8"))
+        a = next(x for x in dash["today_deals"] if x["supplier"] == "A")
+        self.assertTrue(a["incomplete"])
+        self.assertIsNone(a["structural_annual_eur"])
+
     def test_missing_source_url_fails_without_writing(self):
         write(self.dir / "energy.csv", [row("2026-10-01", "A", source_url="")])
         res = run(self.dir)

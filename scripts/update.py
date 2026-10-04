@@ -19,8 +19,11 @@ ROOT = Path(__file__).resolve().parent.parent
 ENERGY_FIELDS = [
     "date", "supplier", "product", "kwh_single", "kwh_normal", "kwh_dal",
     "tax_basis", "fixed_supply_eur_month", "welcome_bonus_eur",
-    "feedin_payment_eur_kwh", "feedin_cost_desc", "source_url", "checked_at", "notes",
+    "feedin_payment_eur_kwh", "feedin_cost_desc", "source_url", "fixed_source_url", "checked_at", "notes",
 ]
+# Fixed supply charges usually change only on 1 Jan / 1 Jul, so a sourced value
+# from an earlier day may stand in when today's research didn't find one.
+FIXED_CARRY_DAYS = 92
 INTERNET_FIELDS = [
     "date", "provider", "product", "technology", "download_mbps",
     "price_eur_month", "first_year_cost_eur", "contract_months", "promo_desc", "source_url",
@@ -97,38 +100,61 @@ def load_energy(rows, cfg, fixed_costs):
     for i, row in enumerate(rows, start=2):  # row 1 is the header
         if not (row["source_url"] or "").startswith("http"):
             raise RowError(f"row {i}: source_url missing or invalid")
+        fixed_url = (row["fixed_source_url"] or "").strip()
+        if fixed_url and not fixed_url.startswith("http"):
+            raise RowError(f"row {i}: fixed_source_url invalid")
         d = parse_date(row["date"], i)
         supplier = (row["supplier"] or "").strip()
         if not supplier:
             raise RowError(f"row {i}: supplier is required")
-        kwh = effective_kwh_price(row, i, hh["dual_tariff_normal_share"], fixed_costs)
-        fixed = num(row["fixed_supply_eur_month"], "fixed_supply_eur_month", i, required=True)
-        bonus = num(row["welcome_bonus_eur"], "welcome_bonus_eur", i) or 0.0
-        structural = hh["annual_kwh"] * kwh + 12 * fixed
         deal = {
             "date": d,
             "supplier": supplier,
             "product": row["product"].strip(),
-            "kwh_price": round(kwh, 5),
-            "fixed_supply_eur_month": round(fixed, 2),
-            "welcome_bonus_eur": round(bonus, 2),
-            "structural_annual_eur": round(structural, 2),
-            "year1_annual_eur": round(structural - bonus, 2),
+            "kwh_price": round(effective_kwh_price(row, i, hh["dual_tariff_normal_share"], fixed_costs), 5),
+            "fixed_supply_eur_month": num(row["fixed_supply_eur_month"], "fixed_supply_eur_month", i),
+            "fixed_source_url": fixed_url or row["source_url"].strip(),
+            "fixed_carried_from": None,
+            "welcome_bonus_eur": round(num(row["welcome_bonus_eur"], "welcome_bonus_eur", i) or 0.0, 2),
             "feedin_payment_eur_kwh": num(row["feedin_payment_eur_kwh"], "feedin_payment_eur_kwh", i),
             "feedin_cost_desc": row["feedin_cost_desc"].strip(),
             "source_url": row["source_url"].strip(),
             "checked_at": row["checked_at"].strip(),
             "notes": row["notes"].strip(),
-            "flagged": not (cmp_["kwh_price_sane_min"] <= kwh <= cmp_["kwh_price_sane_max"]),
         }
         key = (d, supplier.lower())
         if key not in latest or deal["checked_at"] >= latest[key]["checked_at"]:
             latest[key] = deal
+
+    # Fill missing fixed charges from the supplier's most recent sourced value.
+    last_fixed = {}
+    for key in sorted(latest):
+        deal = latest[key]
+        if deal["fixed_supply_eur_month"] is not None:
+            last_fixed[key[1]] = deal
+        else:
+            prev = last_fixed.get(key[1])
+            if prev and (deal["date"] - prev["date"]).days <= FIXED_CARRY_DAYS:
+                deal["fixed_supply_eur_month"] = prev["fixed_supply_eur_month"]
+                deal["fixed_source_url"] = prev["fixed_source_url"]
+                deal["fixed_carried_from"] = prev["date"].isoformat()
+
     by_date = {}
     for deal in latest.values():
+        kwh, fixed = deal["kwh_price"], deal["fixed_supply_eur_month"]
+        deal["incomplete"] = fixed is None
+        deal["flagged"] = not (cmp_["kwh_price_sane_min"] <= kwh <= cmp_["kwh_price_sane_max"])
+        if fixed is None:
+            deal["structural_annual_eur"] = deal["year1_annual_eur"] = None
+        else:
+            deal["fixed_supply_eur_month"] = round(fixed, 2)
+            structural = hh["annual_kwh"] * kwh + 12 * fixed
+            deal["structural_annual_eur"] = round(structural, 2)
+            deal["year1_annual_eur"] = round(structural - deal["welcome_bonus_eur"], 2)
         by_date.setdefault(deal["date"], []).append(deal)
     for deals in by_date.values():
-        deals.sort(key=lambda x: (x["flagged"], x["structural_annual_eur"]))
+        # Ranked deals first, then incomplete ones (no fixed charge) by kWh price, flagged last.
+        deals.sort(key=lambda x: (x["flagged"], x["incomplete"], x["structural_annual_eur"] or 0, x["kwh_price"]))
     return by_date
 
 
@@ -141,7 +167,7 @@ def daily_best(by_date, cfg):
     out = []
     full = []  # (date, best structural) for non-partial days
     for d in sorted(by_date):
-        ranked = [x for x in by_date[d] if not x["flagged"]]
+        ranked = [x for x in by_date[d] if not x["flagged"] and not x["incomplete"]]
         if not ranked:
             continue
         best = ranked[0]
@@ -257,11 +283,15 @@ def main():
         t = history[-1]
         print(f"{t['date']} [{t['status']}, {t['n_suppliers']} suppliers] best: {t['best_supplier']} "
               f"EUR {t['structural_annual_eur']}/yr | avg7 {t['avg7_eur']} avg30 {t['avg30_eur']} all {t['avg_all_eur']}")
-        flagged = [x for x in by_date[latest_date] if x["flagged"]]
-        for x in flagged:
-            print(f"FLAGGED (price out of range): {x['supplier']} {x['kwh_price']} EUR/kWh", file=sys.stderr)
     else:
-        print("No energy data yet.")
+        print("No ranked energy data yet.")
+    for x in by_date.get(latest_date, []):
+        if x["flagged"]:
+            print(f"FLAGGED (price out of range): {x['supplier']} {x['kwh_price']} EUR/kWh", file=sys.stderr)
+        elif x["incomplete"]:
+            print(f"INCOMPLETE (no fixed charge, not ranked): {x['supplier']}", file=sys.stderr)
+        elif x["fixed_carried_from"]:
+            print(f"fixed charge carried from {x['fixed_carried_from']}: {x['supplier']}")
     return 0
 
 
