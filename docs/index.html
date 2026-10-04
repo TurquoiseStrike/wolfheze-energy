@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wolfheze Energy</title>
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11,11,11,0.10);
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --good: #006300;
+  --bad: #d03b3b;
+  --link: #256abf;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+    --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5; --series-2: #d95926; --good: #0ca30c; --bad: #e66767; --link: #86b6ef;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7;
+  --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
+  --series-1: #3987e5; --series-2: #d95926; --good: #0ca30c; --bad: #e66767; --link: #86b6ef;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: env(safe-area-inset-top, 0px) 16px env(safe-area-inset-bottom, 0px);
+}
+main { max-width: 1040px; margin: 0 auto; padding-block: 28px 48px; }
+a { color: var(--link); }
+header h1 { font-size: 22px; margin: 0 0 2px; letter-spacing: -0.01em; }
+header p { margin: 0; color: var(--ink-2); }
+.grid { display: grid; gap: 16px; grid-template-columns: repeat(12, minmax(0, 1fr)); margin-top: 20px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px 20px; grid-column: span 12; min-width: 0;
+}
+.span-7 { grid-column: span 7; } .span-5 { grid-column: span 5; } .span-6 { grid-column: span 6; }
+@media (max-width: 760px) { .span-7, .span-5, .span-6 { grid-column: span 12; } }
+.card h2 { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 0 0 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.hero { font-size: 40px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.1; }
+.hero small { font-size: 16px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; }
+.supplier { font-size: 18px; font-weight: 600; margin-top: 6px; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 12px; color: var(--ink-2); }
+.facts b { color: var(--ink); font-weight: 600; }
+.delta { font-size: 28px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+.delta.good { color: var(--good); } .delta.bad { color: var(--bad); }
+.sub { color: var(--ink-2); margin-top: 4px; }
+.muted { color: var(--muted); }
+.tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--border); color: var(--ink-2); }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 600; color: var(--ink-2); font-size: 12px; padding: 6px 10px 6px 0; border-bottom: 1px solid var(--axis); white-space: nowrap; }
+td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--grid); vertical-align: top; }
+td.num, th.num { text-align: right; white-space: nowrap; }
+tr.best td { font-weight: 600; }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; color: var(--ink-2); font-size: 13px; margin-bottom: 8px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.chart-wrap { position: relative; }
+.chart-wrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart-wrap text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tip {
+  position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); font-size: 12px; min-width: 170px;
+}
+.tip .d { color: var(--ink-2); margin-bottom: 4px; }
+.tip .r { display: flex; align-items: center; gap: 8px; }
+.tip .r b { font-size: 13px; }
+.tip .r i { display: inline-block; width: 12px; height: 2px; }
+.key-line { display: inline-block; width: 16px; height: 0; border-top: 2px solid; }
+details summary { cursor: pointer; color: var(--ink-2); margin-top: 12px; }
+.empty { color: var(--ink-2); padding: 8px 0; }
+.banner { margin-top: 16px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); }
+footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Wolfheze Energy</h1>
+    <p id="subtitle">Daily best variable electricity deal, tracked over time.</p>
+  </header>
+  <div id="banner" class="banner" hidden></div>
+
+  <div class="grid">
+    <section class="card span-7" aria-labelledby="h-best">
+      <h2 id="h-best">Today's best variable deal</h2>
+      <div id="best"><div class="empty">No prices collected yet. The first daily run will fill this in.</div></div>
+    </section>
+    <section class="card span-5" aria-labelledby="h-vs">
+      <h2 id="h-vs">Today vs 30-day average</h2>
+      <div id="vs"><div class="empty">Needs at least one full day of data.</div></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-chart">
+      <h2 id="h-chart">Best annual supply cost per day</h2>
+      <div id="chart"><div class="empty">The chart appears after the first daily run.</div></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-top">
+      <h2 id="h-top">Today's ranking</h2>
+      <div id="top"><div class="empty">—</div></div>
+    </section>
+
+    <section class="card span-6" aria-labelledby="h-solar">
+      <h2 id="h-solar">Solar readiness</h2>
+      <p class="sub" style="margin-top:0">Net metering (<i>salderen</i>) ends 1 Jan 2027. After that, what a supplier pays for power you
+        feed back (<i>terugleververgoeding</i>) and what it charges for it (<i>terugleverkosten</i>) decide what solar panels earn.</p>
+      <div id="solar"><div class="empty">—</div></div>
+    </section>
+    <section class="card span-6" aria-labelledby="h-budget">
+      <h2 id="h-budget">Yearly budget estimate</h2>
+      <div id="budget"><div class="empty">Grid costs and water tariffs are checked on the first run of each month.</div></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-net">
+      <h2 id="h-net">Internet at the new address</h2>
+      <div id="internet"><div class="empty">Checked every Monday.</div></div>
+    </section>
+  </div>
+
+  <footer id="footer">Prices are collected daily by an AI research agent from supplier and comparison websites. Every price links to its source. Check before signing.</footer>
+</main>
+
+<script>
+const eur = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+const eur2 = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const kwhFmt = new Intl.NumberFormat("nl-NL", { style: "currency", currency: "EUR", minimumFractionDigits: 4, maximumFractionDigits: 4 });
+const dayFmt = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
+const shortDay = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
+const parseDay = s => new Date(s + "T12:00:00");
+const SVGNS = "http://www.w3.org/2000/svg";
+
+// Build DOM without innerHTML: all labels come from scraped data.
+function el(tag, props, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (k === "class") n.className = v; else if (k === "style") n.style.cssText = v; else n.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) if (k != null) n.append(k instanceof Node ? k : String(k));
+  return n;
+}
+function svg(tag, attrs) {
+  const n = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
+  return n;
+}
+function link(url, text) {
+  return /^https?:\/\//.test(url || "") ? el("a", { href: url, target: "_blank", rel: "noopener" }, text) : text;
+}
+function fill(id, ...nodes) { const n = document.getElementById(id); n.replaceChildren(...nodes); }
+function table(head, rows, numCols = []) {
+  return el("div", { class: "scroll" }, el("table", {},
+    el("thead", {}, el("tr", {}, head.map((h, i) => el("th", { class: numCols.includes(i) ? "num" : "" }, h)))),
+    el("tbody", {}, rows)));
+}
+
+function renderBest(d) {
+  const t = d.today;
+  const deal = d.today_deals.find(x => x.supplier === t.best_supplier) || {};
+  fill("best",
+    el("div", { class: "hero" }, eur.format(t.structural_annual_eur), " ", el("small", {}, "/ year supply")),
+    el("div", { class: "supplier" }, link(deal.source_url, t.best_supplier), " ",
+      el("span", { class: "muted", style: "font-weight:400" }, t.best_product)),
+    el("div", { class: "facts" },
+      el("span", {}, el("b", {}, kwhFmt.format(t.kwh_price)), " per kWh"),
+      el("span", {}, el("b", {}, eur2.format(t.fixed_supply_eur_month)), " fixed / month"),
+      el("span", {}, "based on ", el("b", {}, d.household.annual_kwh.toLocaleString("nl-NL")), " kWh / year")),
+    el("p", { class: "sub" },
+      t.best_year1_supplier !== t.best_supplier
+        ? ["Cheapest in year 1 including welcome bonus: ", el("b", {}, t.best_year1_supplier), " at ", eur.format(t.best_year1_eur), "."]
+        : ["Also the cheapest in year 1 including welcome bonuses (", eur.format(t.year1_annual_eur), ")."]),
+    el("p", { class: "muted", style: "margin:4px 0 0" }, `${dayFmt.format(parseDay(t.date))} · ${t.n_suppliers} suppliers compared`,
+      t.status === "partial" ? " · partial day (not counted in averages)" : ""));
+}
+
+function renderVs(d) {
+  const t = d.today;
+  if (t.avg30_eur == null) return;
+  const diff = t.structural_annual_eur - t.avg30_eur;
+  const pct = diff / t.avg30_eur * 100;
+  const cheaper = diff < 0;
+  const flat = Math.abs(pct) < 0.5;
+  fill("vs",
+    el("div", { class: "delta " + (flat ? "" : cheaper ? "good" : "bad") },
+      el("span", { "aria-hidden": "true" }, flat ? "●" : cheaper ? "▼" : "▲"),
+      flat ? "Same as average" : `${Math.abs(pct).toFixed(1)}% ${cheaper ? "cheaper" : "more expensive"}`),
+    el("div", { class: "sub" }, flat ? "Today's best matches the 30-day average." :
+      `${eur.format(Math.abs(diff))} / year ${cheaper ? "below" : "above"} the 30-day average of ${eur.format(t.avg30_eur)}.`),
+    el("div", { class: "facts" },
+      el("span", {}, "7-day avg ", el("b", {}, eur.format(t.avg7_eur))),
+      el("span", {}, "All-time avg ", el("b", {}, eur.format(t.avg_all_eur)))));
+}
+
+function renderChart(d) {
+  const h = d.history;
+  const box = document.getElementById("chart");
+  const W = Math.max(320, box.clientWidth || 900), H = W < 520 ? 240 : 300;
+  const m = { l: 56, r: 16, t: 12, b: 28 };
+  const iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const xs = h.map(p => parseDay(p.date).getTime());
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const x = t => m.l + (x1 === x0 ? iw / 2 : (t - x0) / (x1 - x0) * iw);
+  const vals = h.flatMap(p => [p.structural_annual_eur, p.avg30_eur, p.avg_all_eur]).filter(v => v != null);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = Math.max((hi - lo) * 0.15, 20); lo -= pad; hi += pad;
+  const step = niceStep((hi - lo) / 4);
+  lo = Math.floor(lo / step) * step; hi = Math.ceil(hi / step) * step;
+  const y = v => m.t + ih - (v - lo) / (hi - lo) * ih;
+
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Daily best annual supply cost with 30-day and all-time averages" });
+  for (let v = lo; v <= hi + 1e-9; v += step) {
+    s.append(svg("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: "var(--grid)", "stroke-width": 1 }));
+    const t = svg("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }); t.textContent = eur.format(v); s.append(t);
+  }
+  s.append(svg("line", { x1: m.l, x2: W - m.r, y1: m.t + ih, y2: m.t + ih, stroke: "var(--axis)" }));
+  const nTicks = Math.min(h.length, W < 520 ? 4 : 7);
+  for (let i = 0; i < nTicks; i++) {
+    const idx = nTicks === 1 ? 0 : Math.round(i * (h.length - 1) / (nTicks - 1));
+    const t = svg("text", { x: x(xs[idx]), y: H - 8, "text-anchor": i === 0 && nTicks > 1 ? "start" : i === nTicks - 1 && nTicks > 1 ? "end" : "middle" });
+    t.textContent = shortDay.format(new Date(xs[idx])); s.append(t);
+  }
+  const path = (key, attrs) => {
+    const pts = h.map((p, i) => p[key] == null ? null : `${x(xs[i]).toFixed(1)},${y(p[key]).toFixed(1)}`).filter(Boolean);
+    if (pts.length > 1) s.append(svg("polyline", { points: pts.join(" "), fill: "none", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", ...attrs }));
+  };
+  path("avg_all_eur", { stroke: "var(--ink-2)", "stroke-dasharray": "4 4", "stroke-width": 1.5 });
+  path("avg30_eur", { stroke: "var(--series-2)" });
+  path("structural_annual_eur", { stroke: "var(--series-1)" });
+  h.forEach((p, i) => {
+    if (h.length <= 45 || p.status === "partial" || i === h.length - 1)
+      s.append(svg("circle", { cx: x(xs[i]), cy: y(p.structural_annual_eur), r: 4,
+        fill: p.status === "partial" ? "var(--surface)" : "var(--series-1)", stroke: p.status === "partial" ? "var(--series-1)" : "var(--surface)", "stroke-width": 2 }));
+  });
+  // Direct label on the latest daily best.
+  const last = h[h.length - 1];
+  const lbl = svg("text", { x: Math.min(x(xs[xs.length - 1]), W - m.r) - 6, y: y(last.structural_annual_eur) - 10, "text-anchor": "end", style: "fill:var(--ink);font-weight:600;font-size:12px;stroke:var(--surface);stroke-width:4px;paint-order:stroke" });
+  lbl.textContent = eur.format(last.structural_annual_eur); s.append(lbl);
+
+  // Crosshair + tooltip.
+  const cross = svg("line", { y1: m.t, y2: m.t + ih, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" });
+  const hit = svg("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent", tabindex: 0 });
+  s.append(cross, hit);
+  const tip = el("div", { class: "tip", hidden: "" });
+  const show = i => {
+    const p = h[i];
+    cross.setAttribute("x1", x(xs[i])); cross.setAttribute("x2", x(xs[i])); cross.setAttribute("visibility", "visible");
+    const row = (color, val, name, dashed) => el("div", { class: "r" },
+      el("i", { style: dashed ? `border-top:2px dashed ${color};height:0` : `background:${color}` }),
+      el("b", {}, val == null ? "—" : eur.format(val)), el("span", { class: "muted" }, name));
+    tip.replaceChildren(
+      el("div", { class: "d" }, dayFmt.format(parseDay(p.date)), p.status === "partial" ? " · partial" : ""),
+      row("var(--series-1)", p.structural_annual_eur, `Best: ${p.best_supplier}`),
+      row("var(--series-2)", p.avg30_eur, "30-day avg"),
+      row("var(--ink-2)", p.avg_all_eur, "All-time avg", true));
+    tip.hidden = false;
+    const r = box.getBoundingClientRect(), sx = r.width / W;
+    let left = x(xs[i]) * sx + 12;
+    if (left + 190 > r.width) left = x(xs[i]) * sx - 200;
+    tip.style.left = Math.max(0, left) + "px"; tip.style.top = (m.t * sx + 8) + "px";
+  };
+  const nearest = cx => { let bi = 0, bd = Infinity; xs.forEach((t, i) => { const dd = Math.abs(x(t) - cx); if (dd < bd) { bd = dd; bi = i; } }); return bi; };
+  let cur = h.length - 1;
+  hit.addEventListener("pointermove", e => { const r = s.getBoundingClientRect(); cur = nearest((e.clientX - r.left) * W / r.width); show(cur); });
+  hit.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+  hit.addEventListener("focus", () => show(cur));
+  hit.addEventListener("blur", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+  hit.addEventListener("keydown", e => {
+    if (e.key === "ArrowLeft") cur = Math.max(0, cur - 1); else if (e.key === "ArrowRight") cur = Math.min(h.length - 1, cur + 1); else return;
+    e.preventDefault(); show(cur);
+  });
+
+  const legend = el("div", { class: "legend" },
+    el("span", {}, el("i", { class: "key-line", style: "border-color:var(--series-1)" }), "Daily best"),
+    el("span", {}, el("i", { class: "key-line", style: "border-color:var(--series-2)" }), "30-day average"),
+    el("span", {}, el("i", { class: "key-line", style: "border-top-style:dashed;border-color:var(--ink-2)" }), "All-time average"),
+    h.some(p => p.status === "partial") ? el("span", { class: "muted" }, "○ partial day, not in averages") : null);
+  const rows = h.slice().reverse().map(p => el("tr", {},
+    el("td", {}, dayFmt.format(parseDay(p.date))), el("td", {}, p.best_supplier),
+    el("td", { class: "num" }, eur.format(p.structural_annual_eur)),
+    el("td", { class: "num" }, p.avg30_eur == null ? "—" : eur.format(p.avg30_eur)),
+    el("td", { class: "num" }, p.avg_all_eur == null ? "—" : eur.format(p.avg_all_eur)),
+    el("td", {}, p.status === "partial" ? `partial (${p.n_suppliers})` : p.n_suppliers)));
+  box.replaceChildren(legend, el("div", { class: "chart-wrap" }, s, tip),
+    el("details", {}, el("summary", {}, "Show as table"),
+      table(["Date", "Best supplier", "Annual cost", "30-day avg", "All-time avg", "Suppliers"], rows, [2, 3, 4])));
+}
+function niceStep(raw) {
+  const p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+}
+
+function renderTop(d) {
+  const deals = d.today_deals;
+  if (!deals.length) return;
+  const rows = deals.map((x, i) => el("tr", { class: i === 0 && !x.flagged ? "best" : "" },
+    el("td", {}, x.flagged ? "—" : i + 1),
+    el("td", {}, link(x.source_url, x.supplier), el("div", { class: "muted", style: "font-weight:400" }, x.product)),
+    el("td", { class: "num" }, kwhFmt.format(x.kwh_price)),
+    el("td", { class: "num" }, eur2.format(x.fixed_supply_eur_month)),
+    el("td", { class: "num" }, eur.format(x.structural_annual_eur)),
+    el("td", { class: "num" }, x.welcome_bonus_eur ? eur.format(x.welcome_bonus_eur) : "—"),
+    el("td", { class: "num" }, eur.format(x.year1_annual_eur)),
+    el("td", { class: "muted" }, x.flagged ? "price out of range, check" : x.notes)));
+  fill("top", table(["#", "Supplier", "€/kWh", "Fixed / mo", "Annual", "Bonus", "Year 1", "Notes"], rows, [2, 3, 4, 5, 6]),
+    el("p", { class: "muted", style: "margin:8px 0 0" }, "Ranked by annual cost without bonuses. Year 1 subtracts the welcome bonus."));
+}
+
+function renderSolar(d) {
+  const deals = d.today_deals.filter(x => !x.flagged);
+  if (!deals.length) return;
+  const sorted = deals.slice().sort((a, b) => (b.feedin_payment_eur_kwh ?? -1) - (a.feedin_payment_eur_kwh ?? -1));
+  fill("solar", table(["Supplier", "Pays / kWh fed back", "Feed-in costs"], sorted.map(x => el("tr", {},
+    el("td", {}, x.supplier),
+    el("td", { class: "num" }, x.feedin_payment_eur_kwh == null ? "not published" : kwhFmt.format(x.feedin_payment_eur_kwh)),
+    el("td", {}, x.feedin_cost_desc || "—"))), [1]));
+}
+
+function renderBudget(d) {
+  const b = d.budget, fc = d.fixed_costs || {}, w = d.water;
+  if (!b) return;
+  const line = (label, val, sign = "") => el("tr", {}, el("td", {}, label), el("td", { class: "num" }, sign + eur.format(val)));
+  const rows = [
+    line(`Electricity supply (best deal, ${d.household.annual_kwh} kWh)`, b.supply_eur_year),
+    line("Grid costs Liander", b.grid_costs_eur_year),
+    line("Energy-tax refund (vermindering energiebelasting)", b.energy_tax_refund_eur_year, "− "),
+    el("tr", { class: "best" }, el("td", {}, "Electricity total"), el("td", { class: "num" }, eur.format(b.total_eur_year))),
+  ];
+  if (b.water_eur_year != null) rows.push(line(`Water Vitens (~${d.household.annual_water_m3} m³)`, b.water_eur_year));
+  fill("budget", table(["", "€ / year"], rows, [1]),
+    el("p", { class: "muted", style: "margin:8px 0 0" },
+      `Grid costs, tax refund and water are the same whichever supplier you pick. Checked ${fc.checked_at || "—"}`,
+      w && w.checked_at ? ` / water ${w.checked_at}` : "", "."));
+}
+
+function renderInternet(d) {
+  const n = d.internet;
+  if (!n || !n.offers.length) return;
+  fill("internet", table(["Provider", "Tech", "Speed", "€ / month", "First year", "Contract", "Promotion"], n.offers.map(o => el("tr", {},
+    el("td", {}, link(o.source_url, o.provider), el("div", { class: "muted" }, o.product)),
+    el("td", {}, o.technology),
+    el("td", { class: "num" }, o.download_mbps ? `${o.download_mbps} Mbit/s` : "—"),
+    el("td", { class: "num" }, o.price_eur_month ? eur2.format(+o.price_eur_month) : "—"),
+    el("td", { class: "num" }, o.first_year_cost_eur ? eur.format(+o.first_year_cost_eur) : "—"),
+    el("td", { class: "num" }, o.contract_months ? `${o.contract_months} mo` : "—"),
+    el("td", { class: "muted" }, o.promo_desc))), [2, 3, 4, 5]),
+    el("p", { class: "muted", style: "margin:8px 0 0" }, `Checked ${dayFmt.format(parseDay(n.date))}.`));
+}
+
+async function main() {
+  let d;
+  try {
+    const res = await fetch("data/dashboard.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    d = await res.json();
+  } catch (e) {
+    const b = document.getElementById("banner");
+    b.textContent = "No data yet. The dashboard fills in after the first daily run."; b.hidden = false;
+    return;
+  }
+  if (d.generated_at) {
+    document.getElementById("subtitle").textContent =
+      `Best variable electricity deal for ${d.household.location}, ${d.household.annual_kwh.toLocaleString("nl-NL")} kWh/year. Updated ${dayFmt.format(new Date(d.generated_at))}.`;
+  }
+  if (d.today) {
+    renderBest(d); renderVs(d); renderChart(d); renderTop(d); renderSolar(d);
+    let t; addEventListener("resize", () => { clearTimeout(t); t = setTimeout(() => renderChart(d), 150); });
+  }
+  renderBudget(d); renderInternet(d);
+}
+main();
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+{
+  "household": {
+    "location": "Wolfheze (gemeente Renkum, Gelderland)",
+    "grid_operator": "Liander",
+    "water_company": "Vitens",
+    "all_electric": true,
+    "annual_kwh": 3500,
+    "dual_tariff_normal_share": 0.6,
+    "annual_water_m3": 80,
+    "solar": false
+  },
+  "comparison": {
+    "contract_type": "variable",
+    "min_suppliers_for_full_day": 8,
+    "kwh_price_sane_min": 0.15,
+    "kwh_price_sane_max": 0.45,
+    "top_n": 5
+  },
+  "suppliers": [
+    "Vattenfall",
+    "Eneco",
+    "Essent",
+    "Budget Energie",
+    "Greenchoice",
+    "Vandebron",
+    "Pure Energie",
+    "Energiedirect",
+    "Oxxio",
+    "Delta Energie",
+    "Coolblue Energie",
+    "Zonneplan",
+    "United Consumers",
+    "Mega",
+    "Innova Energie"
+  ],
+  "comparison_sites": [
+    "https://www.independer.nl/energie",
+    "https://www.gaslicht.com",
+    "https://www.pricewise.nl/energie-vergelijken",
+    "https://www.overstappen.nl/energie"
+  ]
+}
