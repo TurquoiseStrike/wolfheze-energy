@@ -1,17 +1,46 @@
 {
   "_about": "URLs that gave usable prices on earlier runs. The routine tries these first and keeps this file up to date.",
   "energy": {
-    "Delta Energie": ["https://www.deltaenergie.nl/media/0qfbz3jg/modelcontract-variabel-delta-groene-stroom-en-delta-gas-consument-1-oktober-2026_.pdf"],
-    "Innova Energie": ["https://www.innovaenergie.nl/wp-content/uploads/2026/09/Innova-Tariefblad_MODELCONTRACT_VAR-per-01-10-2026-2026.09.23-v1.0.pdf"],
-    "Pure Energie": ["https://pure-energie.nl/assets/Tarieven/Modelcontract/Modelcontract-consument-variabel-per-21-9-2026.pdf"],
-    "Oxxio": ["https://www.oxxio.nl/stroom-en-gas/modelcontract/"],
-    "Mega": ["https://www.mega.nl/variabel-contract-ontwikkeling-prijzen/"],
-    "Coolblue Energie": ["https://www.coolblue.nl/energiecontracten/modelcontract"],
-    "Budget Energie": ["https://www.budgetthuis.nl/energie/modelcontract?client_type=z"],
-    "Vattenfall": ["https://www.keuze.nl/energie/energieleveranciers/vattenfall"],
-    "Eneco": ["https://www.keuze.nl/energie/energieleveranciers/eneco", "https://www.eneco.nl/duurzame-energie/modelcontract/"],
-    "Greenchoice": ["https://www.keuze.nl/energie/energieleveranciers/greenchoice"],
-    "Vandebron": ["https://www.keuze.nl/energie/energieleveranciers/vandebron"]
+    "Delta Energie": [
+      "https://www.deltaenergie.nl/media/0qfbz3jg/modelcontract-variabel-delta-groene-stroom-en-delta-gas-consument-1-oktober-2026_.pdf"
+    ],
+    "Innova Energie": [
+      "https://www.innovaenergie.nl/wp-content/uploads/2026/09/Innova-Tariefblad_MODELCONTRACT_VAR-per-01-10-2026-2026.09.23-v1.0.pdf"
+    ],
+    "Pure Energie": [
+      "https://pure-energie.nl/assets/Tarieven/Modelcontract/Modelcontract-consument-variabel-per-21-9-2026.pdf"
+    ],
+    "Oxxio": [
+      "https://www.oxxio.nl/stroom-en-gas/modelcontract/"
+    ],
+    "Mega": [
+      "https://www.mega.nl/variabel-contract-ontwikkeling-prijzen/"
+    ],
+    "Coolblue Energie": [
+      "https://www.coolblue.nl/energiecontracten/modelcontract"
+    ],
+    "Budget Energie": [
+      "https://www.budgetthuis.nl/energie/modelcontract?client_type=z"
+    ],
+    "Vattenfall": [
+      "https://www.keuze.nl/energie/energieleveranciers/vattenfall"
+    ],
+    "Eneco": [
+      "https://www.keuze.nl/energie/energieleveranciers/eneco",
+      "https://www.eneco.nl/duurzame-energie/modelcontract/"
+    ],
+    "Greenchoice": [
+      "https://www.keuze.nl/energie/energieleveranciers/greenchoice"
+    ],
+    "Vandebron": [
+      "https://www.keuze.nl/energie/energieleveranciers/vandebron"
+    ],
+    "Essent": [
+      "https://www.essent.nl/over-essent/nieuws/essent-past-variabele-tarieven-aan-per-1-oktober-2026/"
+    ],
+    "Energiedirect": [
+      "https://www.keuze.nl/energie/energieleveranciers/energiedirect"
+    ]
   },
   "fixed_costs": [
     "https://www.liander.nl/-/media/files/tarieven/consument/2026/jaarlijkse-netwerkkosten-stroom-2026-v10.pdf",
@@ -21,6 +50,11 @@
     "https://www.vitens.nl/-/media/Project/Vitens/VitensNl/Tarieven/Documenten-tarieven-2026/050004-31-Vitens-Tarieven-2026-Consument_zonder-BoL.pdf"
   ],
   "internet": {
-    "Delta": ["https://www.delta.nl/internet/glasvezel/"]
+    "Delta": [
+      "https://www.delta.nl/internet/glasvezel/"
+    ],
+    "comparison": [
+      "https://www.providers.nl/internet/alleen-internet/"
+    ]
   }
 }

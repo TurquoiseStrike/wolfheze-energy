@@ -1,3 +1,8 @@
 date,provider,product,technology,download_mbps,upload_mbps,price_eur_month,promo_price_eur_month,promo_months,one_off_eur,contract_months,available_at_address,promo_desc,source_url
 2026-10-04,Delta,Glasvezel 500,fiber,500,,42.50,,,,24,unknown,Promo EUR 30/month; address-level availability NOT verified (Delta fiber built in Wolfheze area),https://www.delta.nl/internet/glasvezel/
 2026-10-04,Delta,Glasvezel 1 Gig,fiber,1000,,52.50,,,,24,unknown,Promo EUR 30/month; address-level availability NOT verified (Delta fiber built in Wolfheze area),https://www.delta.nl/internet/glasvezel/
+2026-10-04,Youfone,Internet 100,dsl,100,,32.50,16.25,8,,,unknown,Welkomstkorting 8 mnd; national price from comparison site; address availability NOT verified,https://www.providers.nl/internet/alleen-internet/
+2026-10-04,Online.nl,Internet 100,fiber,100,,50.50,30.00,9,,,unknown,Welkomstkorting 9 mnd; national price from comparison site; address availability NOT verified,https://www.providers.nl/internet/alleen-internet/
+2026-10-04,Odido,Internet 100,fiber,100,,37.50,21.00,6,,,unknown,Welkomstkorting 6 mnd; national price from comparison site; address availability NOT verified,https://www.providers.nl/internet/alleen-internet/
+2026-10-04,KPN,Internet 100,fiber,100,,50.00,37.50,6,,12,unknown,Indicative national price from comparison site; address availability NOT verified,https://www.providers.nl/internet/alleen-internet/
+2026-10-04,Ziggo,Internet 100,cable,100,,49.50,39.50,6,,12,unknown,Indicative national price from comparison site; address availability NOT verified,https://www.providers.nl/internet/alleen-internet/
