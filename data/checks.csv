@@ -1,1 +1,8 @@
 date,supplier,result,notes
+2026-10-04,United Consumers,not_found,"no variable modelcontract page on unitedconsumers.com (404), keuze.nl and selectra show only ranges; browser also tried"
+2026-10-04,Greenchoice,unchanged,"official tariff PDF is dated 2026-05-18 and stale (keuze.nl reports a variable increase 5 days ago); fixed charge not safely obtainable; keuze row kept"
+2026-10-04,Vattenfall,unchanged,"official page needs postcode form; no tariff sheet; fixed charge still not found"
+2026-10-04,Essent,unchanged,"essent.nl blocked (CloudFront 403) in browser; only business sheet found (not usable); fixed charge still not found"
+2026-10-04,Energiedirect,unchanged,"energiedirect.nl blocked (CloudFront 403) in browser; fixed charge not found"
+2026-10-04,Vandebron,unchanged,"tarievenblad not located; fixed charge not found"
+2026-10-04,Mega,unchanged,"fixed EUR 102.85/yr VAT basis unstated, left empty"

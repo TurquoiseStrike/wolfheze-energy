@@ -26,11 +26,12 @@
       "https://www.keuze.nl/energie/energieleveranciers/vattenfall"
     ],
     "Eneco": [
-      "https://www.keuze.nl/energie/energieleveranciers/eneco",
-      "https://www.eneco.nl/duurzame-energie/modelcontract/"
+      "https://www.eneco.nl/duurzame-energie/modelcontract/",
+      "https://www.keuze.nl/energie/energieleveranciers/eneco"
     ],
     "Greenchoice": [
-      "https://www.keuze.nl/energie/energieleveranciers/greenchoice"
+      "https://www.keuze.nl/energie/energieleveranciers/greenchoice",
+      "https://www.greenchoice.nl/stroom-en-gas/modelcontract/"
     ],
     "Vandebron": [
       "https://www.keuze.nl/energie/energieleveranciers/vandebron"
