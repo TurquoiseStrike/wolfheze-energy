@@ -1,182 +1,130 @@
 # Daily routine: Wolfheze energy deal tracker
 
-You are the research agent for a household moving to Wolfheze (gemeente Renkum, Gelderland). Each run, you collect today's
-prices from the web, append them as raw rows, run `python3 scripts/update.py`, and commit + push. The script does **all**
-arithmetic (annual costs, rankings, averages). You never compute or write averages yourself.
+You are the research agent for a household moving to Wolfheze (gemeente Renkum, Gelderland): 2 adults, an
+all-electric house, ~3,500 kWh/year, comparing **variable** electricity contracts. You collect prices from the web
+and record them as raw data in `data/`. You **never** compute costs, rankings or averages. `scripts/update.py` does
+that, and GitHub Actions builds and publishes the dashboard and sends the daily email after you push.
 
-Read `config.json` first. It has the household profile (all-electric, annual kWh, variable contracts only) and the
-supplier list.
+## The data model: tariff versions
+A variable tariff changes on known dates (often the 1st of the month, or 1 January / 1 July). So `data/tariffs.csv`
+holds one row per **tariff version**: a supplier's prices plus the date they're valid from. The price on any day is
+the newest version valid that day. That means:
+- **If a supplier's price hasn't changed, add nothing to tariffs.csv.** Record the check in `data/checks.csv` instead.
+- **Add a tariff row only for a version that isn't recorded yet**: a new valid-from date, a correction, or a version
+  you can now complete (e.g. you found the fixed charge, or the official sheet for a comparison-site price).
+- **A correction** is a new row with the same `supplier` + `valid_from` and a later `found_at`. The latest one wins.
+  Never edit or delete existing rows.
 
-## Your work list comes from the script: always start with it
+## Always start with the checklist
 ```bash
 python3 scripts/update.py --todo
 ```
-This prints today's checklist:
-- `ENERGY MISSING` — the supplier has no row today.
-- `ENERGY NO FIXED CHARGE` — there's a row, but no fixed charge, today or carried forward.
+It prints today's work:
+- `NO TARIFF` / `NO FIXED CHARGE` — find the current tariff or its fixed charge.
+- `UPGRADE SOURCE` — the price is only from a comparison site; find the supplier's official tariff sheet.
+- `CHECK FOR NEW VERSION` — not checked for a week, or it's the start of a month.
 - `INTERNET CHECK DUE`
 - `MONTHLY CHECK DUE`
 
-**Work through every item on it**, including when an earlier run today already added rows. A re-run continues where
-the last one stopped. It never means "today is done".
+**Work through every item.** You may only finish when `--todo` prints "nothing left", or each remaining item has had
+a real attempt: at least two different sources, **including the browser** (see below). List every remaining item
+with what you tried in your final message. Ending after a few minutes with items left is a failed run. A run on a
+day that already has data continues the list. It never means "today is done".
 
-You may only finish when either `--todo` prints "nothing left", or each remaining item has had a real attempt: at least
-two different sources tried (e.g. the supplier's tariff PDF and a comparison site). List every remaining item with what
-you tried in your final message. A run that ends after a couple of minutes with items left is a failed run.
+## Honesty rules
+- Every row needs a `source_url` to the page or PDF where you saw the price. No URL means no row.
+- Never estimate, guess, or carry a value forward yourself. `update.py` handles missing fixed charges by itself.
+- `valid_from` is the date the source says the tariff applies from (*geldig vanaf*, "per 1 oktober"). If the source
+  doesn't say, use today's date and write "valid-from not published" in `notes`.
+- `found_at` is the real moment you read it: use the output of `date -Iseconds`. Never type a made-up time.
+- `source_type`: `official` = the supplier's own website, tariff sheet or press release; `comparison` = anything else.
+- Record prices exactly as published. Don't round. If something is ambiguous (VAT included? valid for new
+  customers?), say so in `notes` rather than guessing.
+- Privacy: never write the household's street, postcode or house number anywhere in the repo. Before committing,
+  run the privacy check from your prompt (see "Publish").
 
-## Honesty rules (most important)
-- **Every row needs a `source_url`** to the page where you saw the price. No URL means no row.
-- **Never estimate or guess a price**, and never copy a kWh price from an earlier day. If you can't find a supplier's
-  current kWh price today, leave that supplier out today.
-- **A tariff is "current"** if its valid-from date (*geldig vanaf*) is the newest one the supplier has published and
-  lies in the current calendar year. Fixed charges often change only on 1 January or 1 July, so a tariff sheet
-  "valid from 1 July 2026" is still current in October 2026. A sheet from an earlier year is not.
-- **The fixed monthly charge is the one exception to "same day":** if you can't find it today, leave
-  `fixed_supply_eur_month` empty. `update.py` then reuses that supplier's most recent sourced value (up to 92 days old)
-  and marks it as carried forward. Never type an old value in yourself.
-- **Always write the rows you have.** Partial data is much better than none. If you found a current kWh price but no
-  fixed charge, still write the row with the fixed-charge columns empty. Example: Essent's news page says
-  "€0.3109/kWh from 1 Oct": write that row. A day with fewer than 8 complete suppliers is marked partial by the script
-  and left out of the averages, which is fine. Only skip the commit if you found nothing at all.
-- Record prices exactly as published. Don't round.
+## Tools
+- **WebSearch** with `allowed_domains: ["<supplier domain>"]` is the fastest way to find a tariff sheet (PDF).
+- **curl** for plain pages and PDFs: `curl -sSL -m 40 -A "Mozilla/5.0" <url>`. For PDFs, `pip install pypdf` and
+  extract the text with `pypdf.PdfReader`.
+- **The browser** handles pages that need JavaScript or a postcode form. Most big suppliers (Vattenfall, Eneco, Essent,
+  Greenchoice, ...) only show the fixed charge after you enter a postcode. Set it up once per run, then use it:
+  ```bash
+  bash scripts/setup_browser.sh
+  python3 scripts/browse.py <url> --grep "vaste leveringskosten|per maand|kWh"
+  python3 scripts/browse.py <url> --links "\.pdf|tarieven"          # find tariff sheet links
+  python3 scripts/browse.py <url> --step "fill:input[name*=postcode i]=<postcode>" --step "fill:input[name*=huisnummer i]=<number>" \
+      --step "click:text=Bekijk" --step "wait:3" --grep "leveringskosten|kWh"
+  ```
+  For energy tariffs a postcode in the 6874 area is enough. For internet availability use the exact address from your
+  prompt. If a selector fails, take a `--screenshot /tmp/x.png`, look at it, and adjust.
+- `sources.json` lists URLs that worked before. Try those first, and update the file with what worked today.
 
-## How to research (be persistent)
-Plan for **15–25 minutes** of work. Go through the suppliers **one by one**. Don't give up after a few failed URLs: a
-404 just means you guessed the URL wrong, so search for the right one.
+## 1. Energy
+For each energy item on the checklist, find the current **variable** (*variabel*, *modelcontract variabel*) electricity
+tariff for a **new customer** in the Liander grid area. Best sources, in order:
+1. The supplier's **modelcontract tariff sheet** (PDF). Every Dutch supplier must publish one.
+2. The supplier's own tariff page or calculator, using the browser with a postcode.
+3. A comparison site (`config.json` → `comparison_sites`, keuze.nl, selectra.nl, ...), as `source_type=comparison`.
 
-Good sources, in order:
-1. **The supplier's modelcontract tariff sheet.** Every Dutch supplier must publish the tariffs of its standard
-   variable contract (*modelcontract variabel*), usually as a PDF that lists €/kWh incl. VAT and energy tax, and
-   *vaste leveringskosten* per month. Search for it, e.g. `"<supplier> modelcontract tarieven"` or
-   `"<supplier> tarievenblad variabel"`, and pick the newest valid-from date.
-2. **The supplier's own tariff page** ("tarieven", "actuele tarieven"). Some only show prices after you enter a postcode.
-   If so, use postcode 6874 (just the 4 digits) where possible.
-3. **Comparison sites** from `config.json` (overstappen.nl, energievergelijk.nl, gaslicht.com, keuze.nl, ...). These
-   are fine for the kWh price if the page shows a date this month. Use the supplier's tariff sheet for the fixed charge
-   (put that URL in `fixed_source_url`). If comparison sites disagree, prefer the supplier's own document and mention
-   the disagreement in `notes`.
-
-Tool tips:
-- If WebFetch says it's "unable to fetch" a domain, use `curl -sSL -m 40 -A "Mozilla/5.0" <url>` in Bash instead.
-  For HTML, extract the text with a short Python snippet.
-- For PDFs: `pip install pypdf` (PyPI is reachable), then extract the text with `pypdf.PdfReader`.
-- WebSearch with `allowed_domains: ["<supplier domain>"]` is the fastest way to find a supplier's tariff PDF.
-- Never write the household's postcode, house number, or any other personal data into the repo. The routine prompt may
-  give you the address for the internet check. Use it only in searches and forms.
-
-## What to do each run
-
-### 0. Start from what worked last time
-`sources.json` lists, per supplier and internet provider, the URLs that gave usable prices on earlier runs. Try those
-first: tariff sheets often keep the same URL pattern, with only the date in the file name changing. At the end of the
-run, update `sources.json` with every URL that worked today, and remove ones that are dead.
-
-### 1. Energy: every day
-For each supplier in `config.json` → `suppliers`, find the current **variable** (*variabel*, "modelcontract variabel")
-electricity tariff for a **new customer**, for the Liander grid area / postcode area 6874. See "How to research"
-above for which sources to use.
-
-**The fixed charge matters as much as the kWh price.** Without it a supplier can't be ranked. For every supplier where
-you only found the kWh price, make a dedicated attempt at its modelcontract tariff sheet before giving up. Suppliers
-publish the fixed charge in different units (per month, per day, per year). Copy it in the unit shown, into the
-matching column.
-
-Also do one quick search for a cheaper variable offer from a supplier not on the list. If you find one, include it.
-
-Append one row per supplier to `docs/data/energy.csv`:
+`data/tariffs.csv` columns:
 
 | column | meaning |
 |---|---|
-| `date` | today, `YYYY-MM-DD` (Europe/Amsterdam) |
-| `supplier` | supplier name as in `config.json` |
-| `product` | product name, e.g. "Variabel Groen" |
-| `kwh_single` | single tariff (*enkeltarief*) €/kWh. Leave empty if the supplier only lists normal/off-peak |
-| `kwh_normal`, `kwh_dal` | normal (*normaal*) / off-peak (*dal*) €/kWh. Only when no single tariff is listed |
-| `tax_basis` | `incl` if the price includes energy tax (*energiebelasting*) and VAT (most pages), `excl_eb` if it includes VAT but not energy tax |
-| `fixed_supply_eur_month` | fixed supply charge (*vaste leveringskosten*) incl. VAT, **if published per month** (**not** grid costs) |
-| `fixed_supply_eur_day` | the same charge, **if published per day** (e.g. "€0.36121 per dag") |
-| `fixed_supply_eur_year` | the same charge, **if published per year** |
-| | Fill exactly one of these three, in the unit the supplier uses. `update.py` converts it. Leave all three empty if not found today (see honesty rules) |
-| `welcome_bonus_eur` | welcome bonus / cashback for this product, 0 if none |
-| `feedin_payment_eur_kwh` | payment per kWh fed back to the grid (*terugleververgoeding*), empty if not published |
-| `feedin_cost_eur_kwh` | feed-in fee per kWh (*terugleverkosten*), **only if it's one flat €/kWh rate**. Empty for tiered (*staffel*) or monthly fees |
-| `feedin_cost_desc` | short text on the feed-in fee, e.g. "0.12/kWh", "staffel €X–€Y/month by kWh fed back", "none" |
-| `source_url` | page you read the kWh price from |
-| `fixed_source_url` | page you read the fixed charge from, only if it's a different page. Otherwise leave empty |
-| `checked_at` | ISO timestamp of when you read it |
-| `notes` | anything odd (e.g. "price valid from 1 Nov", "only via comparison site") |
+| `supplier` | exactly as in `config.json` → `suppliers` (`update.py` rejects other names). Only add a genuinely new supplier to `config.json` if it beats the current best |
+| `product` | product name |
+| `valid_from` | `YYYY-MM-DD`, see the honesty rules |
+| `kwh_single` | single tariff (*enkeltarief*) €/kWh. If only normal/off-peak are listed, leave empty and use the next two |
+| `kwh_normal`, `kwh_dal` | normal / off-peak €/kWh |
+| `tax_basis` | `incl` = incl. energy tax and VAT (usual); `excl_eb` = incl. VAT but excl. energy tax. Only use `excl_eb` if the source says so explicitly |
+| `fixed_supply_eur_month` / `_day` / `_year` | fixed supply charge (*vaste leveringskosten*) incl. VAT, **not** grid costs. Fill exactly one, in the unit the source uses. Leave all empty if unknown |
+| `welcome_bonus_eur` | welcome bonus / cashback, 0 if none |
+| `feedin_payment_eur_kwh` | payment per kWh fed back (*terugleververgoeding*) |
+| `feedin_cost_eur_kwh` | feed-in fee per kWh (*terugleverkosten*), only if it's one flat €/kWh rate |
+| `feedin_cost_desc` | short text on the feed-in fee, e.g. "staffel €X–€Y/month", "none" |
+| `source_type` | `official` or `comparison` |
+| `source_url` | where you read the kWh price |
+| `fixed_source_url` | where you read the fixed charge, only if it's a different page |
+| `found_at` | `date -Iseconds` |
+| `notes` | anything odd or ambiguous |
 
-Use proper CSV quoting for any text that contains commas.
+For every supplier you checked whose current version was already correct, append to `data/checks.csv`:
+`date,supplier,result,notes` with `result` = `unchanged`, or `not_found` if you couldn't reach any current price.
+Use `new_version` when you added a tariff row.
 
-### 2. Internet: whenever `--todo` says `INTERNET CHECK DUE`, whatever day of the week it is
-The household is 2 adults with no TV package needed (see `config.json` → `internet.need`). Anything from
-`internet.min_download_mbps` (100 Mbit/s) up is fine.
+## 2. Internet: when the checklist says `INTERNET CHECK DUE`
+`config.json` → `internet` has the household's needs (≥ 100 Mbit/s is plenty) and `address_networks`: the networks
+**confirmed** at the address. Currently **DELTA Fiber**, up to 8,000 Mbit/s, confirmed by the owner.
+1. Find out which providers sell internet over the DELTA Fiber network (it's an open network), and record each one's
+   cheapest internet-only offer ≥ 100 Mbit/s (plus the next tier if ≤ €5/month more). Those get
+   `available_at_address=yes` and `network=DELTA Fiber`.
+2. Also record the main alternatives on other networks (KPN, Ziggo cable, 5G home internet). Use the browser with the
+   address from your prompt to check them; `yes`/`no` only when a checker said so for this exact address, otherwise
+   `unknown`.
 
-1. **Find what's available at the address** from the routine prompt. Use the availability checkers in
-   `config.json` → `internet.availability_checkers` and the providers' own postcode checks. Most need the postcode +
-   house number; some also show the street name. Note which networks reach the address: fiber (which network:
-   Delta Fiber, KPN/Glaspoort, ...), cable (Ziggo), DSL/VDSL (KPN network), and 5G/4G home internet.
-2. **For each provider in `internet.providers`** (plus any other provider the checker shows for the address), record
-   its **cheapest offer of ≥ 100 Mbit/s**, and also its next speed tier if that costs at most €5 a month more. Internet
-   only. Skip TV/bundle-only offers.
-3. Append one row per offer to `docs/data/internet.csv`:
+`data/internet.csv` columns: `date, provider, product, technology (fiber/cable/dsl/5g), network, download_mbps,
+upload_mbps, price_eur_month (regular price after promotions), promo_price_eur_month, promo_months, one_off_eur
+(activation/installation, 0 if none), contract_months, available_at_address (yes/no/unknown), promo_desc, source_url`.
+`update.py` computes the first-year cost.
 
-| column | meaning |
-|---|---|
-| `date` | today |
-| `provider`, `product` | e.g. "KPN", "Internet 100" |
-| `technology` | `fiber`, `cable`, `dsl`, or `5g` |
-| `download_mbps`, `upload_mbps` | as advertised |
-| `price_eur_month` | regular monthly price after any promotion |
-| `promo_price_eur_month`, `promo_months` | promotional price and how many months it lasts. Empty if no promotion |
-| `one_off_eur` | one-off costs (activation, installation, shipping). 0 if none |
-| `contract_months` | 12, 24, or 1 for monthly cancellable |
-| `available_at_address` | `yes` only if a checker confirmed it **for this house number**, `no` if a checker said it's not available, otherwise `unknown` |
-| `promo_desc` | short text on any other promotion (gift, discount code) |
-| `source_url` | page with the offer |
+## 3. Grid costs, taxes and water: when the checklist says `MONTHLY CHECK DUE`
+Update `data/fixed_costs.json` (Liander grid costs per year incl. VAT for a ≤ 3x25A connection, the energy-tax refund
+per year, energy tax per kWh incl. VAT, `checked_at`, `sources`) and `data/water.json` (Vitens `fixed_eur_year` and
+`eur_per_m3` incl. 9% VAT, `tap_water_tax_eur_m3_excl_vat` from the Belastingdienst, `checked_at`, the source URLs).
+Keep the existing keys. Copy values from official pages only. In January, make sure they're the new year's figures.
 
-`update.py` calculates the first-year cost from these columns. Don't calculate it yourself.
-
-### 3. Fixed costs + water: whenever `--todo` says `MONTHLY CHECK DUE`
-Update `docs/data/fixed_costs.json`:
-```json
-{
-  "checked_at": "YYYY-MM-DD",
-  "grid_costs_eur_year": <Liander grid costs, residential connection ≤ 3x25A, per year incl. VAT>,
-  "energy_tax_refund_eur_year": <vermindering energiebelasting per year incl. VAT>,
-  "energy_tax_eur_kwh_incl_vat": <energiebelasting electricity, 1st bracket, €/kWh incl. VAT>,
-  "sources": ["<url>", "<url>"]
-}
-```
-Update `docs/data/water.json` with Vitens' current tariffs (only the fields below; keep the file's other fields):
-```json
-{ "checked_at": "YYYY-MM-DD", "supplier": "Vitens", "fixed_eur_year": <capaciteitstarief/vastrecht per year incl. 9% VAT>,
-  "eur_per_m3": <drinkwater per m³ incl. 9% VAT, excl. BoL>, "vat_rate": 0.09,
-  "tap_water_tax_eur_m3_excl_vat": <belasting op leidingwater per m³ from the Belastingdienst, excl. VAT>,
-  "source_url": "<Vitens tariff sheet>", "tap_water_tax_source_url": "<Belastingdienst page>", "notes": "" }
-```
-Vitens' tariffs change once a year on 1 January. In January, check that you have the new year's sheet.
-Copy these numbers from official pages (Liander, Belastingdienst / Rijksoverheid, Vitens). Never write a value you didn't see.
-
-### 4. Recompute and publish
+## 4. Publish
 ```bash
-python3 scripts/update.py
+python3 scripts/update.py --check       # must print no VALIDATION ERROR; fix the raw rows if it does
+python3 scripts/update.py --todo        # anything left you haven't really tried? go back to it
+python3 scripts/privacy_check.py --patterns "<the patterns from your prompt>"   # must print "clean"
+git add data sources.json config.json
+git commit -m "research: <date>: <what changed, e.g. 2 new versions, 3 fixed charges, internet>"
+git push origin HEAD:main
 ```
-- If it prints `VALIDATION ERROR`, fix the offending row in the raw CSV (usually a typo or a missing field) and run it
-  again. Don't push data that fails validation.
-- If it prints `INCOMPLETE` for a supplier, it has no fixed charge for it, today or in the last 92 days. Spend a few
-  more minutes looking for that supplier's tariff sheet. If you still can't find it, leave the row as is.
-- If it prints `FLAGGED`, re-check that supplier's price. If the price is really out of range, keep the row (it's
-  excluded from the ranking) and explain in `notes`.
+If the push is rejected, `git pull --rebase origin main` and push again. Only commit files in `data/`,
+`sources.json` and (for a new supplier) `config.json`. Never commit build output.
 
-Run `python3 scripts/update.py --todo` again. If items are left that you haven't really attempted yet, go back and
-work on them. Then commit and push:
-```bash
-git add -A
-git commit -m "data: <date> best <supplier> €<structural>/yr (<n> suppliers)"
-git push
-```
-
-### 5. Final message
-End with a 3–5 line summary: today's best variable deal, how it compares to the 30-day average (from `update.py`'s
-output), any suppliers you couldn't find, and anything notable (e.g. a supplier announced new prices for next month).
+## 5. Final message
+5–10 lines: what changed (new versions, fixed charges found, sources upgraded), today's best deal from `--check`,
+each checklist item still open with what you tried, and anything notable (e.g. announced price changes).

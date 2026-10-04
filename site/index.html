@@ -90,6 +90,11 @@ tr.best td { font-weight: 600; }
 .advice p { margin: 0 0 4px; }
 .advice .pick { font-size: 16px; font-weight: 600; }
 .warn { color: var(--bad); }
+.badge { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 99px; border: 1px solid var(--border); color: var(--ink-2); font-weight: 400; white-space: nowrap; }
+.badge.cmp { border-style: dashed; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.tabs button { font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); cursor: pointer; }
+.tabs button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
 details summary { cursor: pointer; color: var(--ink-2); margin-top: 12px; }
 .empty { color: var(--ink-2); padding: 8px 0; }
 .banner { margin-top: 16px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); }
@@ -127,6 +132,13 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
     <section class="card" aria-labelledby="h-top">
       <h2 id="h-top">Today's ranking</h2>
       <div id="top"><div class="empty">—</div></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-periods">
+      <h2 id="h-periods">Cheapest over time</h2>
+      <p class="sub" style="margin-top:0">On a variable contract you pay each month's price, so the supplier that's cheap
+        over months matters more than today's cheapest. Average annual cost per supplier over each period.</p>
+      <div id="periods"><div class="empty">—</div></div>
     </section>
 
     <section class="card span-6" aria-labelledby="h-solar">
@@ -175,7 +187,7 @@ function svg(tag, attrs) {
 function link(url, text) {
   return /^https?:\/\//.test(url || "") ? el("a", { href: url, target: "_blank", rel: "noopener" }, text) : text;
 }
-function fill(id, ...nodes) { const n = document.getElementById(id); n.replaceChildren(...nodes); }
+function fill(id, ...nodes) { document.getElementById(id).replaceChildren(...nodes.filter(x => x != null)); }
 function table(head, rows, numCols = []) {
   return el("div", { class: "scroll" }, el("table", {},
     el("thead", {}, el("tr", {}, head.map((h, i) => el("th", { class: numCols.includes(i) ? "num" : "" }, h)))),
@@ -184,7 +196,7 @@ function table(head, rows, numCols = []) {
 
 function renderBest(d) {
   const t = d.today;
-  const deal = d.today_deals.find(x => x.supplier === t.best_supplier) || {};
+  const deal = d.ranking.find(x => x.supplier === t.best_supplier) || {};
   fill("best",
     el("div", { class: "hero" }, eur.format(t.structural_annual_eur), " ", el("small", {}, "/ year supply")),
     el("div", { class: "supplier" }, link(deal.source_url, t.best_supplier), " ",
@@ -196,7 +208,7 @@ function renderBest(d) {
     el("p", { class: "sub" },
       t.best_year1_supplier !== t.best_supplier
         ? ["Cheapest in year 1 including welcome bonus: ", el("b", {}, t.best_year1_supplier), " at ", eur.format(t.best_year1_eur), "."]
-        : ["Also the cheapest in year 1 including welcome bonuses (", eur.format(t.year1_annual_eur), ")."]),
+        : ["Also the cheapest in year 1 including welcome bonuses (", eur.format(t.best_year1_eur), ")."]),
     el("p", { class: "muted", style: "margin:4px 0 0" }, `${dayFmt.format(parseDay(t.date))} · ${t.n_suppliers} suppliers compared`,
       t.status === "partial" ? " · partial day (not counted in averages)" : ""));
 }
@@ -317,29 +329,67 @@ function niceStep(raw) {
   return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
 }
 
+const shortDate = s => s ? shortDay.format(parseDay(s)) : "—";
+const sourceBadge = x => x.source_type === "official"
+  ? el("span", { class: "badge", title: "From the supplier's own tariff sheet or page" }, "official")
+  : el("span", { class: "badge cmp", title: "From a comparison site; not yet confirmed by the supplier" }, "comparison site");
+
 function renderTop(d) {
-  const deals = d.today_deals;
+  const deals = d.ranking;
   if (!deals.length) return;
-  const ranked = x => !x.flagged && !x.incomplete;
   const money = (fmt, v) => v == null ? "—" : fmt.format(v);
   const note = x => x.flagged ? "price out of range, check"
-    : x.incomplete ? "fixed charge not found, not ranked"
-    : [x.fixed_carried_from ? `fixed charge from ${x.fixed_carried_from}` : "", x.notes].filter(Boolean).join(" · ");
-  const rows = deals.map((x, i) => el("tr", { class: i === 0 && ranked(x) ? "best" : "" },
-    el("td", {}, ranked(x) ? i + 1 : "—"),
-    el("td", {}, link(x.source_url, x.supplier), el("div", { class: "muted", style: "font-weight:400" }, x.product)),
+    : !x.complete ? "fixed charge not found, not ranked"
+    : [x.fixed_carried_from ? `fixed charge from version of ${shortDate(x.fixed_carried_from)}` : "", x.notes].filter(Boolean).join(" · ");
+  const rows = deals.map((x, i) => el("tr", { class: i === 0 && x.rankable ? "best" : "" },
+    el("td", {}, x.rankable ? i + 1 : "—"),
+    el("td", {}, link(x.source_url, x.supplier), " ", sourceBadge(x),
+      el("div", { class: "muted", style: "font-weight:400" }, x.product)),
     el("td", { class: "num" }, kwhFmt.format(x.kwh_price)),
     el("td", { class: "num" }, x.fixed_supply_eur_month == null ? "—" : link(x.fixed_source_url, eur2.format(x.fixed_supply_eur_month))),
     el("td", { class: "num" }, money(eur, x.structural_annual_eur)),
     el("td", { class: "num" }, x.welcome_bonus_eur ? eur.format(x.welcome_bonus_eur) : "—"),
     el("td", { class: "num" }, money(eur, x.year1_annual_eur)),
+    el("td", { class: "num" }, shortDate(x.valid_from)),
+    el("td", { class: "num" }, shortDate(x.last_checked)),
     el("td", { class: "muted" }, note(x))));
-  fill("top", table(["#", "Supplier", "€/kWh", "Fixed / mo", "Annual", "Bonus", "Year 1", "Notes"], rows, [2, 3, 4, 5, 6]),
-    el("p", { class: "muted", style: "margin:8px 0 0" }, "Ranked by annual cost without bonuses. Year 1 subtracts the welcome bonus."));
+  fill("top", table(["#", "Supplier", "€/kWh", "Fixed / mo", "Annual", "Bonus", "Year 1", "Valid from", "Checked", "Notes"], rows, [2, 3, 4, 5, 6, 7, 8]),
+    el("p", { class: "muted", style: "margin:8px 0 0" }, "Ranked by annual cost without bonuses. Year 1 subtracts the welcome bonus. " +
+      "Prices marked “comparison site” aren't confirmed by the supplier yet."));
+}
+
+function renderPeriods(d) {
+  const ps = d.periods || {};
+  const keys = Object.keys(ps).filter(k => ps[k].suppliers.length);
+  if (!keys.length) return;
+  let current = keys.find(k => ps[k].days >= 30) || keys[0];
+  const box = el("div");
+  const tabs = el("div", { class: "tabs", role: "group", "aria-label": "Period" });
+  const draw = () => {
+    const p = ps[current];
+    tabs.replaceChildren(...keys.map(k => {
+      const b = el("button", { type: "button", "aria-pressed": String(k === current) }, `${k} days`);
+      b.addEventListener("click", () => { current = k; draw(); });
+      return b;
+    }));
+    let rank = 0;
+    box.replaceChildren(table(["#", "Supplier", "Avg annual cost", "Days with a price"], p.suppliers.map(r => {
+      const ok = r.coverage >= 0.8;
+      return el("tr", { class: ok && rank === 0 ? "best" : "" },
+        el("td", {}, ok ? ++rank : "—"), el("td", {}, r.supplier),
+        el("td", { class: "num" }, eur.format(r.avg_annual_eur)),
+        el("td", { class: "num" + (ok ? "" : " muted") }, `${r.days} of ${p.days}`));
+    }), [2, 3]),
+    el("p", { class: "muted", style: "margin:8px 0 0" },
+      `${shortDate(p.from)} – ${shortDate(p.to)}. Suppliers with a price on fewer than 80% of the days aren't ranked. ` +
+      `Tracking started ${shortDate(d.comparison.tracking_start)}, so longer periods fill up over time.`));
+  };
+  draw();
+  fill("periods", tabs, box);
 }
 
 function renderSolar(d) {
-  const deals = d.today_deals.filter(x => !x.flagged);
+  const deals = d.ranking.filter(x => !x.flagged);
   if (!deals.length) return;
   const net = x => x.feedin_payment_eur_kwh != null && x.feedin_cost_eur_kwh != null ? x.feedin_payment_eur_kwh - x.feedin_cost_eur_kwh : null;
   const sorted = deals.slice().sort((a, b) => (net(b) ?? -9) - (net(a) ?? -9));
@@ -374,9 +424,13 @@ function renderInternet(d) {
   const n = d.internet;
   if (!n || !n.offers.length) return;
   const min = d.advice?.internet?.min_download_mbps ?? 100;
-  fill("internet", table(["Provider", "Tech", "Speed", "At your address", "€ / month", "Promotion", "First year", "Contract"], n.offers.map(o => el("tr", {},
+  const nets = (d.internet_config?.address_networks || []).filter(x => x.status === "confirmed");
+  fill("internet",
+    nets.length ? el("p", { class: "sub", style: "margin-top:0" }, "Confirmed at your address: ",
+      nets.map((x, i) => [i ? ", " : "", el("b", {}, x.network), ` (${x.technology}, up to ${x.max_download_mbps.toLocaleString("nl-NL")} Mbit/s)`]), ".") : null,
+    table(["Provider", "Network", "Speed", "At your address", "€ / month", "Promotion", "First year", "Contract"], n.offers.map(o => el("tr", {},
     el("td", {}, link(o.source_url, o.provider), el("div", { class: "muted" }, o.product)),
-    el("td", {}, o.technology),
+    el("td", {}, [o.network, o.technology].filter(Boolean).join(" · ") || "—"),
     el("td", { class: "num" }, o.download_mbps ? `${o.download_mbps} Mbit/s` : "—"),
     el("td", { class: o.available_at_address === "no" ? "warn" : o.available_at_address === "yes" ? "" : "muted" }, AVAIL[o.available_at_address]),
     el("td", { class: "num" }, eur2.format(o.price_eur_month)),
@@ -398,8 +452,11 @@ function renderAdvice(d) {
       el("p", { class: "pick" }, link(e.source_url, e.supplier), ` · ${eur.format(e.annual_eur)} / year`),
       el("p", {}, `${e.product}: ${kwhFmt.format(e.kwh_price)} per kWh + ${eur2.format(e.fixed_supply_eur_month)} a month.`,
         e.runner_up ? ` ${eur.format(e.gap_eur)} a year cheaper than ${e.runner_up}.` : ""),
-      el("p", { class: "muted" }, `Cheapest on ${e.days_best} of the last ${e.days_tracked} tracked day${e.days_tracked === 1 ? "" : "s"}. ` +
-        "A variable contract can be cancelled at any time with 30 days' notice and no fee, so you're never locked in.")));
+      e.source_type !== "official" ? el("p", { class: "warn" }, "Price only seen on a comparison site so far. Check it on the supplier's site.") : null,
+      e.consistent ? el("p", {}, e.consistent.supplier === e.supplier
+        ? `Also the cheapest on average over the last ${e.consistent.days} days.`
+        : `Over the last ${e.consistent.days} days, ${e.consistent.supplier} was cheapest on average (${eur.format(e.consistent.avg_annual_eur)} / year).`) : null,
+      el("p", { class: "muted" }, "A variable contract can be cancelled at any time with 30 days' notice and no fee, so you're never locked in.")));
   }
   if (a.internet) {
     const i = a.internet;
@@ -433,7 +490,7 @@ function renderAdvice(d) {
 async function main() {
   let d;
   try {
-    const res = await fetch("data/dashboard.json", { cache: "no-store" });
+    const res = await fetch("dashboard.json", { cache: "no-store" });
     if (!res.ok) throw new Error(res.status);
     d = await res.json();
   } catch (e) {
@@ -441,15 +498,21 @@ async function main() {
     b.textContent = "No data yet. The dashboard fills in after the first daily run."; b.hidden = false;
     return;
   }
-  if (d.generated_at) {
-    document.getElementById("subtitle").textContent =
-      `Best variable electricity deal for ${d.household.location}, ${d.household.annual_kwh.toLocaleString("nl-NL")} kWh/year. Updated ${dayFmt.format(new Date(d.generated_at))}.`;
+  document.getElementById("subtitle").textContent =
+    `Best variable electricity deal for ${d.household.location}, ${d.household.annual_kwh.toLocaleString("nl-NL")} kWh/year. ` +
+    `Prices for ${dayFmt.format(parseDay(d.today_date))}.`;
+  const warnings = d.health?.warnings || [];
+  if (warnings.length) {
+    const b = document.getElementById("banner");
+    b.replaceChildren(...warnings.map(w => el("div", {}, "⚠ ", w)));
+    b.hidden = false;
   }
-  if (d.today) {
-    renderBest(d); renderVs(d); renderChart(d);
+  if (d.today) { renderBest(d); renderVs(d); }
+  if (d.history.length) {
+    renderChart(d);
     let t; addEventListener("resize", () => { clearTimeout(t); t = setTimeout(() => renderChart(d), 150); });
   }
-  renderAdvice(d); renderTop(d); renderSolar(d); renderBudget(d); renderInternet(d);
+  renderAdvice(d); renderTop(d); renderPeriods(d); renderSolar(d); renderBudget(d); renderInternet(d);
 }
 main();
 </script>

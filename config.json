@@ -21,14 +21,24 @@
       "https://www.breedbandwinkel.nl",
       "https://www.overstappen.nl/internet",
       "https://www.independer.nl/internet"
+    ],
+    "address_networks": [
+      {
+        "network": "DELTA Fiber",
+        "technology": "fiber",
+        "max_download_mbps": 8000,
+        "status": "confirmed",
+        "confirmed_on": "2026-10-04",
+        "how": "delta.nl postcode check by the owner"
+      }
     ]
   },
   "comparison": {
     "contract_type": "variable",
-    "min_suppliers_for_full_day": 8,
+    "tracking_start": "2026-10-01",
+    "min_suppliers_for_full_day": 5,
     "kwh_price_sane_min": 0.15,
-    "kwh_price_sane_max": 0.45,
-    "top_n": 5
+    "kwh_price_sane_max": 0.45
   },
   "suppliers": [
     "Vattenfall",

@@ -1,0 +1,86 @@
+name: Build, publish and email
+
+# The research agent (a Claude routine, ~05:00 UTC) only pushes raw data to data/.
+# This workflow tests it, checks it for private data, builds the dashboard and publishes it.
+# The scheduled run also sends the daily email, after the research run has had time to finish.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "30 6 * * *" # 08:30 Amsterdam summer time / 07:30 winter time
+  workflow_dispatch:
+    inputs:
+      send_email:
+        description: Also send the email digest
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Tests
+        run: python -m unittest discover tests
+      - name: Privacy check
+        env:
+          PRIVATE_PATTERNS: ${{ secrets.PRIVATE_PATTERNS }}
+        run: python scripts/privacy_check.py
+      - name: Build site
+        run: python scripts/update.py --out _site
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dashboard
+          path: _site/dashboard.json
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
+
+  email:
+    needs: [build, deploy]
+    if: always() && (github.event_name == 'schedule' || inputs.send_email)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          name: dashboard
+          path: _site
+      - name: Send digest
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          BUILD_OK: ${{ needs.build.result == 'success' && needs.deploy.result == 'success' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: >
+          python scripts/email_digest.py
+          --dashboard _site/dashboard.json
+          --site-url https://turquoisestrike.github.io/wolfheze-energy/

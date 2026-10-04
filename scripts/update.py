@@ -1,49 +1,63 @@
-"""Recompute daily best deals, averages and dashboard.json from the raw CSVs.
+"""Build the Wolfheze energy dashboard from the raw research data in data/.
 
-All arithmetic lives here so the numbers never depend on the research agent
-doing math. Standard library only.
+The research agent only appends raw rows; every number is computed here.
 
-Usage: python scripts/update.py [--data-dir docs/data] [--config config.json]
-Exit code 1 means a raw row failed validation; nothing is written in that case.
+  python scripts/update.py --todo        what today's research run still has to do (writes nothing)
+  python scripts/update.py --check       validate data/ and print today's summary (writes nothing)
+  python scripts/update.py --out _site   validate and build the static site (used by CI)
+
+Exit code 1 means the raw data failed validation.
+
+Data model: a variable tariff changes on known dates, so data/tariffs.csv holds one row per
+tariff *version* (supplier + valid_from). The price on any day is the newest version valid
+that day, which gives complete daily series without re-recording unchanged prices.
 """
 
 import argparse
 import csv
 import json
+import shutil
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
-ENERGY_FIELDS = [
-    "date", "supplier", "product", "kwh_single", "kwh_normal", "kwh_dal",
-    "tax_basis", "fixed_supply_eur_month", "fixed_supply_eur_day", "fixed_supply_eur_year", "welcome_bonus_eur",
-    "feedin_payment_eur_kwh", "feedin_cost_eur_kwh", "feedin_cost_desc", "source_url", "fixed_source_url",
-    "checked_at", "notes",
+TARIFF_FIELDS = [
+    "supplier", "product", "valid_from", "kwh_single", "kwh_normal", "kwh_dal", "tax_basis",
+    "fixed_supply_eur_month", "fixed_supply_eur_day", "fixed_supply_eur_year", "welcome_bonus_eur",
+    "feedin_payment_eur_kwh", "feedin_cost_eur_kwh", "feedin_cost_desc",
+    "source_type", "source_url", "fixed_source_url", "found_at", "notes",
 ]
-ENERGY_REQUIRED = ["date", "supplier", "source_url"]
-# Fixed supply charges usually change only on 1 Jan / 1 Jul, so a sourced value
-# from an earlier day may stand in when today's research didn't find one.
-FIXED_CARRY_DAYS = 92
+TARIFF_REQUIRED = ["supplier", "valid_from", "source_type", "source_url", "found_at"]
+SOURCE_TYPES = ("official", "comparison")
+
+CHECK_FIELDS = ["date", "supplier", "result", "notes"]
+CHECK_RESULTS = ("unchanged", "new_version", "not_found")
+
 INTERNET_FIELDS = [
-    "date", "provider", "product", "technology", "download_mbps", "upload_mbps",
+    "date", "provider", "product", "technology", "network", "download_mbps", "upload_mbps",
     "price_eur_month", "promo_price_eur_month", "promo_months", "one_off_eur", "contract_months",
     "available_at_address", "promo_desc", "source_url",
 ]
 INTERNET_REQUIRED = ["date", "provider", "price_eur_month", "source_url"]
-AVAILABILITY = ("yes", "no", "unknown")
-AVAILABILITY_RANK = {"yes": 0, "unknown": 1, "no": 2}  # display order: confirmed, unconfirmed, unavailable
-DAILY_BEST_FIELDS = [
+AVAILABILITY_RANK = {"yes": 0, "unknown": 1, "no": 2}  # display order
+
+DAILY_FIELDS = [
     "date", "status", "n_suppliers", "best_supplier", "best_product", "kwh_price",
-    "fixed_supply_eur_month", "structural_annual_eur", "year1_annual_eur",
-    "best_year1_supplier", "best_year1_eur", "avg7_eur", "avg30_eur", "avg_all_eur",
+    "fixed_supply_eur_month", "structural_annual_eur", "best_year1_supplier", "best_year1_eur",
+    "avg7_eur", "avg30_eur", "avg_all_eur",
 ]
+PERIODS = (30, 90, 180, 365)
+MIN_PERIOD_COVERAGE = 0.8  # share of the window a supplier needs data for to be ranked
+STALE_CHECK_DAYS = 7
 
 
 class RowError(Exception):
     pass
 
+
+# ---------- parsing helpers ----------
 
 def read_csv(path, fields, required):
     """Rows as dicts with every field present; optional columns may be absent from the file."""
@@ -54,59 +68,86 @@ def read_csv(path, fields, required):
         missing = [c for c in required if c not in (reader.fieldnames or [])]
         if missing:
             raise RowError(f"{path.name}: missing columns {missing}")
-        return [{k: (r.get(k) or "") for k in fields} for r in reader]
+        return [{k: (r.get(k) or "").strip() for k in fields} for r in reader]
 
 
-def num(value, field, row_no, required=False):
-    value = (value or "").strip().replace(",", ".")
+def load_json(path, default):
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
+
+
+def num(value, field, where, required=False):
+    value = (value or "").replace(",", ".")
     if not value:
         if required:
-            raise RowError(f"row {row_no}: '{field}' is required")
+            raise RowError(f"{where}: '{field}' is required")
         return None
     try:
         return float(value)
     except ValueError:
-        raise RowError(f"row {row_no}: '{field}' is not a number: {value!r}")
+        raise RowError(f"{where}: '{field}' is not a number: {value!r}")
 
 
-def parse_date(value, row_no):
+def parse_day(value, where):
     try:
-        return date.fromisoformat(value.strip())
+        return date.fromisoformat(value)
     except ValueError:
-        raise RowError(f"row {row_no}: bad date {value!r} (use YYYY-MM-DD)")
+        raise RowError(f"{where}: bad date {value!r} (use YYYY-MM-DD)")
 
 
-def effective_kwh_price(row, row_no, normal_share, fixed_costs):
+def parse_moment(value, where):
+    """found_at must be a real ISO timestamp with timezone, e.g. from `date -Iseconds`."""
+    try:
+        moment = datetime.fromisoformat(value)
+    except ValueError:
+        raise RowError(f"{where}: found_at {value!r} is not an ISO timestamp (use `date -Iseconds`)")
+    if moment.tzinfo is None:
+        raise RowError(f"{where}: found_at {value!r} needs a timezone offset (use `date -Iseconds`)")
+    return moment
+
+
+def amsterdam_today():
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+    except Exception:  # no tz database (e.g. Windows without tzdata)
+        return date.today()
+
+
+def supplier_lookup(cfg):
+    return {s.lower(): s for s in cfg["suppliers"]}
+
+
+# ---------- tariffs ----------
+
+def effective_kwh(row, where, normal_share, fixed_costs):
     """Single-tariff price incl. energy tax and VAT, per kWh."""
-    single = num(row["kwh_single"], "kwh_single", row_no)
-    normal = num(row["kwh_normal"], "kwh_normal", row_no)
-    dal = num(row["kwh_dal"], "kwh_dal", row_no)
+    single = num(row["kwh_single"], "kwh_single", where)
+    normal = num(row["kwh_normal"], "kwh_normal", where)
+    dal = num(row["kwh_dal"], "kwh_dal", where)
     if single is not None:
         price = single
     elif normal is not None and dal is not None:
         price = normal_share * normal + (1 - normal_share) * dal
     else:
-        raise RowError(f"row {row_no}: need kwh_single, or both kwh_normal and kwh_dal")
-
-    basis = (row["tax_basis"] or "incl").strip()
+        raise RowError(f"{where}: need kwh_single, or both kwh_normal and kwh_dal")
+    basis = row["tax_basis"] or "incl"
     if basis == "incl":
         return price
     if basis == "excl_eb":
-        # Supplier listed price incl. VAT but excl. energy tax: add tax incl. VAT.
         tax = fixed_costs.get("energy_tax_eur_kwh_incl_vat")
         if tax is None:
-            raise RowError(f"row {row_no}: tax_basis excl_eb but fixed_costs.json has no energy_tax_eur_kwh_incl_vat")
+            raise RowError(f"{where}: tax_basis excl_eb but fixed_costs.json has no energy_tax_eur_kwh_incl_vat")
         return price + tax
-    raise RowError(f"row {row_no}: tax_basis must be 'incl' or 'excl_eb', got {basis!r}")
+    raise RowError(f"{where}: tax_basis must be 'incl' or 'excl_eb', got {basis!r}")
 
 
-def monthly_fixed(row, row_no):
+def monthly_fixed(row, where):
     """Fixed supply charge per month, from whichever unit the supplier published."""
-    month = num(row["fixed_supply_eur_month"], "fixed_supply_eur_month", row_no)
-    day = num(row["fixed_supply_eur_day"], "fixed_supply_eur_day", row_no)
-    year = num(row["fixed_supply_eur_year"], "fixed_supply_eur_year", row_no)
+    month = num(row["fixed_supply_eur_month"], "fixed_supply_eur_month", where)
+    day = num(row["fixed_supply_eur_day"], "fixed_supply_eur_day", where)
+    year = num(row["fixed_supply_eur_year"], "fixed_supply_eur_year", where)
     if sum(v is not None for v in (month, day, year)) > 1:
-        raise RowError(f"row {row_no}: fill only one of fixed_supply_eur_month / _day / _year")
+        raise RowError(f"{where}: fill only one of fixed_supply_eur_month / _day / _year")
     if day is not None:
         return day * 365 / 12
     if year is not None:
@@ -114,156 +155,209 @@ def monthly_fixed(row, row_no):
     return month
 
 
-def load_energy(rows, cfg, fixed_costs):
-    """Validate raw rows; keep the latest check per (date, supplier)."""
+def load_tariffs(rows, cfg, fixed_costs):
+    """Validate rows; return {supplier: [versions sorted by valid_from]}.
+
+    A correction for the same (supplier, valid_from) is a new row with a later found_at; the
+    latest one wins. A version without a fixed charge borrows it from the supplier's previous
+    version of the same calendar year (fixed charges change on 1 January at the latest).
+    """
     hh, cmp_ = cfg["household"], cfg["comparison"]
+    names = supplier_lookup(cfg)
     latest = {}
     for i, row in enumerate(rows, start=2):  # row 1 is the header
-        if not (row["source_url"] or "").startswith("http"):
-            raise RowError(f"row {i}: source_url missing or invalid")
-        fixed_url = (row["fixed_source_url"] or "").strip()
-        if fixed_url and not fixed_url.startswith("http"):
-            raise RowError(f"row {i}: fixed_source_url invalid")
-        d = parse_date(row["date"], i)
-        supplier = (row["supplier"] or "").strip()
-        if not supplier:
-            raise RowError(f"row {i}: supplier is required")
-        deal = {
-            "date": d,
+        where = f"tariffs.csv row {i}"
+        supplier = names.get(row["supplier"].lower())
+        if supplier is None:
+            raise RowError(f"{where}: unknown supplier {row['supplier']!r}. Use the exact name from "
+                           f"config.json, or add a genuinely new supplier to config.json first")
+        if not row["source_url"].startswith("http"):
+            raise RowError(f"{where}: source_url missing or invalid")
+        if row["fixed_source_url"] and not row["fixed_source_url"].startswith("http"):
+            raise RowError(f"{where}: fixed_source_url invalid")
+        if row["source_type"] not in SOURCE_TYPES:
+            raise RowError(f"{where}: source_type must be one of {SOURCE_TYPES}")
+        kwh = effective_kwh(row, where, hh["dual_tariff_normal_share"], fixed_costs)
+        version = {
             "supplier": supplier,
-            "product": row["product"].strip(),
-            "kwh_price": round(effective_kwh_price(row, i, hh["dual_tariff_normal_share"], fixed_costs), 5),
-            "fixed_supply_eur_month": monthly_fixed(row, i),
-            "fixed_source_url": fixed_url or row["source_url"].strip(),
+            "product": row["product"],
+            "valid_from": parse_day(row["valid_from"], where),
+            "found_at": parse_moment(row["found_at"], where),
+            "kwh_price": round(kwh, 5),
+            "fixed_supply_eur_month": monthly_fixed(row, where),
+            "fixed_source_url": row["fixed_source_url"] or row["source_url"],
             "fixed_carried_from": None,
-            "welcome_bonus_eur": round(num(row["welcome_bonus_eur"], "welcome_bonus_eur", i) or 0.0, 2),
-            "feedin_payment_eur_kwh": num(row["feedin_payment_eur_kwh"], "feedin_payment_eur_kwh", i),
-            "feedin_cost_eur_kwh": num(row["feedin_cost_eur_kwh"], "feedin_cost_eur_kwh", i),
-            "feedin_cost_desc": row["feedin_cost_desc"].strip(),
-            "source_url": row["source_url"].strip(),
-            "checked_at": row["checked_at"].strip(),
-            "notes": row["notes"].strip(),
+            "welcome_bonus_eur": round(num(row["welcome_bonus_eur"], "welcome_bonus_eur", where) or 0.0, 2),
+            "feedin_payment_eur_kwh": num(row["feedin_payment_eur_kwh"], "feedin_payment_eur_kwh", where),
+            "feedin_cost_eur_kwh": num(row["feedin_cost_eur_kwh"], "feedin_cost_eur_kwh", where),
+            "feedin_cost_desc": row["feedin_cost_desc"],
+            "source_type": row["source_type"],
+            "source_url": row["source_url"],
+            "notes": row["notes"],
+            "flagged": not (cmp_["kwh_price_sane_min"] <= kwh <= cmp_["kwh_price_sane_max"]),
         }
-        key = (d, supplier.lower())
-        if key not in latest or deal["checked_at"] >= latest[key]["checked_at"]:
-            latest[key] = deal
+        key = (supplier, version["valid_from"])
+        if key not in latest or version["found_at"] >= latest[key]["found_at"]:
+            latest[key] = version
 
-    # Fill missing fixed charges from the supplier's most recent sourced value.
-    last_fixed = {}
-    for key in sorted(latest):
-        deal = latest[key]
-        if deal["fixed_supply_eur_month"] is not None:
-            last_fixed[key[1]] = deal
+    by_supplier = {}
+    for (supplier, _), v in sorted(latest.items(), key=lambda kv: kv[0][1]):
+        by_supplier.setdefault(supplier, []).append(v)
+    for versions in by_supplier.values():
+        prev = None
+        for v in versions:
+            if v["fixed_supply_eur_month"] is None and prev and prev["fixed_supply_eur_month"] is not None \
+                    and prev["valid_from"].year == v["valid_from"].year:
+                v["fixed_supply_eur_month"] = prev["fixed_supply_eur_month"]
+                v["fixed_source_url"] = prev["fixed_source_url"]
+                v["fixed_carried_from"] = prev["valid_from"]
+            v["complete"] = v["fixed_supply_eur_month"] is not None
+            if v["complete"]:
+                v["fixed_supply_eur_month"] = round(v["fixed_supply_eur_month"], 2)
+                annual = hh["annual_kwh"] * v["kwh_price"] + 12 * v["fixed_supply_eur_month"]
+                v["structural_annual_eur"] = round(annual, 2)
+                v["year1_annual_eur"] = round(annual - v["welcome_bonus_eur"], 2)
+            else:
+                v["structural_annual_eur"] = v["year1_annual_eur"] = None
+            prev = v
+    return by_supplier
+
+
+def version_on(versions, day):
+    """The supplier's version valid on `day` (newest valid_from <= day), or None."""
+    current = None
+    for v in versions:
+        if v["valid_from"] <= day:
+            current = v
         else:
-            prev = last_fixed.get(key[1])
-            if prev and (deal["date"] - prev["date"]).days <= FIXED_CARRY_DAYS:
-                deal["fixed_supply_eur_month"] = prev["fixed_supply_eur_month"]
-                deal["fixed_source_url"] = prev["fixed_source_url"]
-                deal["fixed_carried_from"] = prev["date"].isoformat()
+            break
+    return current
 
-    by_date = {}
-    for deal in latest.values():
-        kwh, fixed = deal["kwh_price"], deal["fixed_supply_eur_month"]
-        deal["incomplete"] = fixed is None
-        deal["flagged"] = not (cmp_["kwh_price_sane_min"] <= kwh <= cmp_["kwh_price_sane_max"])
-        if fixed is None:
-            deal["structural_annual_eur"] = deal["year1_annual_eur"] = None
-        else:
-            deal["fixed_supply_eur_month"] = round(fixed, 2)
-            structural = hh["annual_kwh"] * kwh + 12 * fixed
-            deal["structural_annual_eur"] = round(structural, 2)
-            deal["year1_annual_eur"] = round(structural - deal["welcome_bonus_eur"], 2)
-        by_date.setdefault(deal["date"], []).append(deal)
-    for deals in by_date.values():
-        # Ranked deals first, then incomplete ones (no fixed charge) by kWh price, flagged last.
-        deals.sort(key=lambda x: (x["flagged"], x["incomplete"], x["structural_annual_eur"] or 0, x["kwh_price"]))
-    return by_date
 
+def rankable(v):
+    return v is not None and v["complete"] and not v["flagged"]
+
+
+def deals_on(tariffs, day):
+    """All suppliers' versions valid on `day`: ranked ones by annual cost, then the rest."""
+    deals = [v for v in (version_on(vs, day) for vs in tariffs.values()) if v is not None]
+    deals.sort(key=lambda v: (not rankable(v), v["structural_annual_eur"] or 0, v["kwh_price"]))
+    return deals
+
+
+# ---------- series ----------
 
 def mean(values):
     return round(sum(values) / len(values), 2) if values else None
 
 
-def daily_best(by_date, cfg):
+def daily_series(tariffs, start, end, cfg):
     min_n = cfg["comparison"]["min_suppliers_for_full_day"]
-    out = []
-    full = []  # (date, best structural) for non-partial days
-    for d in sorted(by_date):
-        ranked = [x for x in by_date[d] if not x["flagged"] and not x["incomplete"]]
-        if not ranked:
-            continue
-        best = ranked[0]
-        best_y1 = min(ranked, key=lambda x: x["year1_annual_eur"])
-        status = "full" if len(ranked) >= min_n else "partial"
-        if status == "full":
-            full.append((d, best["structural_annual_eur"]))
-
-        def window(days):
-            return mean([v for fd, v in full if d - fd < timedelta(days=days)])
-
-        out.append({
-            "date": d.isoformat(),
-            "status": status,
-            "n_suppliers": len(ranked),
-            "best_supplier": best["supplier"],
-            "best_product": best["product"],
-            "kwh_price": best["kwh_price"],
-            "fixed_supply_eur_month": best["fixed_supply_eur_month"],
-            "structural_annual_eur": best["structural_annual_eur"],
-            "year1_annual_eur": best["year1_annual_eur"],
-            "best_year1_supplier": best_y1["supplier"],
-            "best_year1_eur": best_y1["year1_annual_eur"],
-            "avg7_eur": window(7) if full else None,
-            "avg30_eur": window(30) if full else None,
-            "avg_all_eur": mean([v for _, v in full]),
-        })
+    out, full = [], []
+    day = start
+    while day <= end:
+        ranked = [v for v in deals_on(tariffs, day) if rankable(v)]
+        if ranked:
+            best = ranked[0]
+            best_y1 = min(ranked, key=lambda v: v["year1_annual_eur"])
+            status = "full" if len(ranked) >= min_n else "partial"
+            if status == "full":
+                full.append((day, best["structural_annual_eur"]))
+            window = lambda n: mean([val for d, val in full if day - d < timedelta(days=n)])  # noqa: E731
+            out.append({
+                "date": day.isoformat(), "status": status, "n_suppliers": len(ranked),
+                "best_supplier": best["supplier"], "best_product": best["product"],
+                "kwh_price": best["kwh_price"], "fixed_supply_eur_month": best["fixed_supply_eur_month"],
+                "structural_annual_eur": best["structural_annual_eur"],
+                "best_year1_supplier": best_y1["supplier"], "best_year1_eur": best_y1["year1_annual_eur"],
+                "avg7_eur": window(7) if full else None, "avg30_eur": window(30) if full else None,
+                "avg_all_eur": mean([val for _, val in full]),
+            })
+        day += timedelta(days=1)
     return out
 
 
-def write_csv(path, fields, rows):
-    with path.open("w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
-        w.writeheader()
-        for r in rows:
-            w.writerow({k: ("" if r.get(k) is None else r.get(k)) for k in fields})
+def period_ranking(tariffs, start, end):
+    """Average annual cost per supplier over the last N days: who is cheap consistently."""
+    out = {}
+    for n in PERIODS:
+        first = max(start, end - timedelta(days=n - 1))
+        span = (end - first).days + 1
+        rows = []
+        for supplier, versions in tariffs.items():
+            costs = []
+            day = first
+            while day <= end:
+                v = version_on(versions, day)
+                if rankable(v):
+                    costs.append(v["structural_annual_eur"])
+                day += timedelta(days=1)
+            if costs:
+                rows.append({"supplier": supplier, "avg_annual_eur": mean(costs),
+                             "days": len(costs), "coverage": round(len(costs) / span, 3)})
+        rows.sort(key=lambda r: (r["coverage"] < MIN_PERIOD_COVERAGE, r["avg_annual_eur"]))
+        out[str(n)] = {"from": first.isoformat(), "to": end.isoformat(), "days": span, "suppliers": rows}
+    return out
 
 
-def load_json(path, default):
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
+# ---------- checks, internet, water ----------
+
+def load_checks(rows, cfg):
+    names = supplier_lookup(cfg)
+    out = []
+    for i, r in enumerate(rows, start=2):
+        where = f"checks.csv row {i}"
+        supplier = names.get(r["supplier"].lower())
+        if supplier is None:
+            raise RowError(f"{where}: unknown supplier {r['supplier']!r}")
+        if r["result"] not in CHECK_RESULTS:
+            raise RowError(f"{where}: result must be one of {CHECK_RESULTS}")
+        out.append({"date": parse_day(r["date"], where), "supplier": supplier, "result": r["result"],
+                    "notes": r["notes"]})
+    return out
 
 
-def deal_json(x):
-    return {k: (v.isoformat() if isinstance(v, date) else v) for k, v in x.items()}
+def last_checked(tariffs, checks):
+    """Most recent day each supplier was looked at, from checks.csv and tariff found_at."""
+    seen = {}
+    for c in checks:
+        seen[c["supplier"]] = max(seen.get(c["supplier"], c["date"]), c["date"])
+    for supplier, versions in tariffs.items():
+        for v in versions:
+            d = v["found_at"].date()
+            seen[supplier] = max(seen.get(supplier, d), d)
+    return seen
 
 
 def load_internet(rows):
     """Validate offers and compute first-year cost from the published promo terms."""
     offers = []
     for i, r in enumerate(rows, start=2):
+        where = f"internet.csv row {i}"
         if not r["source_url"].startswith("http"):
-            raise RowError(f"internet row {i}: source_url missing or invalid")
-        parse_date(r["date"], i)
-        avail = (r["available_at_address"] or "unknown").strip().lower()
-        if avail not in AVAILABILITY:
-            raise RowError(f"internet row {i}: available_at_address must be one of {AVAILABILITY}")
-        price = num(r["price_eur_month"], "price_eur_month", i, required=True)
-        promo = num(r["promo_price_eur_month"], "promo_price_eur_month", i)
-        promo_months = num(r["promo_months"], "promo_months", i)
-        one_off = num(r["one_off_eur"], "one_off_eur", i) or 0.0
+            raise RowError(f"{where}: source_url missing or invalid")
+        parse_day(r["date"], where)
+        avail = (r["available_at_address"] or "unknown").lower()
+        if avail not in AVAILABILITY_RANK:
+            raise RowError(f"{where}: available_at_address must be one of {tuple(AVAILABILITY_RANK)}")
+        price = num(r["price_eur_month"], "price_eur_month", where, required=True)
+        promo = num(r["promo_price_eur_month"], "promo_price_eur_month", where)
+        promo_months = num(r["promo_months"], "promo_months", where)
+        one_off = num(r["one_off_eur"], "one_off_eur", where) or 0.0
         if promo is not None and promo_months is not None:
             pm = min(int(promo_months), 12)
             first_year = promo * pm + price * (12 - pm) + one_off
         else:
             first_year = price * 12 + one_off
         offers.append({
-            "date": r["date"].strip(), "provider": r["provider"].strip(), "product": r["product"].strip(),
-            "technology": r["technology"].strip(),
-            "download_mbps": num(r["download_mbps"], "download_mbps", i),
-            "upload_mbps": num(r["upload_mbps"], "upload_mbps", i),
+            "date": r["date"], "provider": r["provider"], "product": r["product"],
+            "technology": r["technology"], "network": r["network"],
+            "download_mbps": num(r["download_mbps"], "download_mbps", where),
+            "upload_mbps": num(r["upload_mbps"], "upload_mbps", where),
             "price_eur_month": price, "promo_price_eur_month": promo, "promo_months": promo_months,
-            "one_off_eur": one_off, "contract_months": num(r["contract_months"], "contract_months", i),
-            "available_at_address": avail, "promo_desc": r["promo_desc"].strip(),
-            "source_url": r["source_url"].strip(), "first_year_eur": round(first_year, 2),
+            "one_off_eur": one_off, "contract_months": num(r["contract_months"], "contract_months", where),
+            "available_at_address": avail, "promo_desc": r["promo_desc"], "source_url": r["source_url"],
+            "first_year_eur": round(first_year, 2),
         })
     if not offers:
         return None
@@ -282,29 +376,53 @@ def water_cost(water, m3):
     return round(water["fixed_eur_year"] + (water["eur_per_m3"] + tax_incl) * m3, 2)
 
 
-def advice(history, today_deals, internet, cfg):
-    """Structured recommendations; the dashboard turns these into sentences."""
+# ---------- assembling ----------
+
+class Data:
+    """All raw inputs, validated. Raises RowError on bad data."""
+
+    def __init__(self, data_dir, cfg):
+        self.cfg = cfg
+        self.dir = data_dir
+        self.fixed_costs = load_json(data_dir / "fixed_costs.json", {})
+        self.water = load_json(data_dir / "water.json", None)
+        self.tariffs = load_tariffs(read_csv(data_dir / "tariffs.csv", TARIFF_FIELDS, TARIFF_REQUIRED),
+                                    cfg, self.fixed_costs)
+        self.checks = load_checks(read_csv(data_dir / "checks.csv", CHECK_FIELDS, CHECK_FIELDS), cfg)
+        self.internet_rows = read_csv(data_dir / "internet.csv", INTERNET_FIELDS, INTERNET_REQUIRED)
+        self.internet = load_internet(self.internet_rows)
+
+
+def version_json(v):
+    return {k: (val.isoformat() if isinstance(val, (date, datetime)) else val) for k, val in v.items()}
+
+
+def advice(today_row, ranking, periods, internet, cfg):
+    """Structured recommendations; the dashboard and email turn these into sentences."""
     out = {}
-    if history:
-        t = history[-1]
-        recent = history[-30:]
-        ranked = [x for x in today_deals
-                  if x["date"] == t["date"] and not x["flagged"] and not x["incomplete"]]
+    if today_row:
+        ranked = [v for v in ranking if rankable(v)]
         runner = ranked[1] if len(ranked) > 1 else None
+        best = ranked[0]
         out["energy"] = {
-            "supplier": t["best_supplier"], "product": t["best_product"], "annual_eur": t["structural_annual_eur"],
-            "kwh_price": t["kwh_price"], "fixed_supply_eur_month": t["fixed_supply_eur_month"],
-            "days_best": sum(h["best_supplier"] == t["best_supplier"] for h in recent), "days_tracked": len(recent),
+            "supplier": best["supplier"], "product": best["product"], "annual_eur": best["structural_annual_eur"],
+            "kwh_price": best["kwh_price"], "fixed_supply_eur_month": best["fixed_supply_eur_month"],
+            "source_type": best["source_type"], "source_url": best["source_url"],
             "runner_up": runner["supplier"] if runner else None,
-            "gap_eur": round(runner["structural_annual_eur"] - t["structural_annual_eur"], 2) if runner else None,
-            "source_url": next((x["source_url"] for x in ranked if x["supplier"] == t["best_supplier"]), None),
+            "gap_eur": round(runner["structural_annual_eur"] - best["structural_annual_eur"], 2) if runner else None,
         }
-        # Solar: compare what you keep per kWh fed back (payment minus feed-in fee). Only suppliers
-        # with a flat per-kWh fee are comparable; tiered fees stay in the table as text.
-        solar = [x for x in today_deals if x["date"] == t["date"] and not x["flagged"]
-                 and x["feedin_payment_eur_kwh"] is not None and x["feedin_cost_eur_kwh"] is not None]
+        # Longest window in which at least two suppliers have enough data: who is cheap consistently.
+        for n in reversed(PERIODS):
+            p = periods[str(n)]
+            covered = [r for r in p["suppliers"] if r["coverage"] >= MIN_PERIOD_COVERAGE]
+            if len(covered) >= 2 and p["days"] >= 14:
+                out["energy"]["consistent"] = {"supplier": covered[0]["supplier"], "days": p["days"],
+                                               "avg_annual_eur": covered[0]["avg_annual_eur"]}
+                break
+        solar = [v for v in ranking if not v["flagged"] and v["feedin_payment_eur_kwh"] is not None
+                 and v["feedin_cost_eur_kwh"] is not None]
         if solar:
-            s = max(solar, key=lambda x: x["feedin_payment_eur_kwh"] - x["feedin_cost_eur_kwh"])
+            s = max(solar, key=lambda v: v["feedin_payment_eur_kwh"] - v["feedin_cost_eur_kwh"])
             out["solar"] = {"supplier": s["supplier"], "feedin_payment_eur_kwh": s["feedin_payment_eur_kwh"],
                             "feedin_cost_eur_kwh": s["feedin_cost_eur_kwh"],
                             "net_eur_kwh": round(s["feedin_payment_eur_kwh"] - s["feedin_cost_eur_kwh"], 5),
@@ -314,134 +432,158 @@ def advice(history, today_deals, internet, cfg):
         fast_enough = [o for o in internet["offers"]
                        if (o["download_mbps"] or 0) >= min_mbps and o["available_at_address"] != "no"]
         if fast_enough:
-            pick = fast_enough[0]  # already sorted: confirmed availability first, then first-year cost
-            out["internet"] = {**{k: pick[k] for k in ("provider", "product", "technology", "download_mbps",
-                                                        "first_year_eur", "price_eur_month", "contract_months",
-                                                        "available_at_address", "source_url")},
-                               "min_download_mbps": min_mbps}
+            pick = fast_enough[0]  # sorted: confirmed availability first, then first-year cost
+            out["internet"] = {**{k: pick[k] for k in (
+                "provider", "product", "technology", "network", "download_mbps", "first_year_eur",
+                "price_eur_month", "contract_months", "available_at_address", "source_url")},
+                "min_download_mbps": min_mbps}
     return out
 
 
-def amsterdam_today():
-    try:
-        from zoneinfo import ZoneInfo
-        return datetime.now(ZoneInfo("Europe/Amsterdam")).date()
-    except Exception:  # no tz database (e.g. Windows without tzdata)
-        return date.today()
+def build(data, today):
+    cfg = data.cfg
+    start = date.fromisoformat(cfg["comparison"]["tracking_start"])
+    history = daily_series(data.tariffs, start, today, cfg)
+    today_row = history[-1] if history and history[-1]["date"] == today.isoformat() else None
+    ranking = deals_on(data.tariffs, today)
+    periods = period_ranking(data.tariffs, start, today)
+    checked = last_checked(data.tariffs, data.checks)
+
+    budget = None
+    grid = data.fixed_costs.get("grid_costs_eur_year")
+    refund = data.fixed_costs.get("energy_tax_refund_eur_year")
+    if today_row and grid is not None and refund is not None:
+        budget = {"supply_eur_year": today_row["structural_annual_eur"], "grid_costs_eur_year": grid,
+                  "energy_tax_refund_eur_year": refund,
+                  "total_eur_year": round(today_row["structural_annual_eur"] + grid - refund, 2)}
+        water_year = water_cost(data.water, cfg["household"]["annual_water_m3"])
+        if water_year is not None:
+            budget["water_eur_year"] = water_year
+
+    research_today = (any(c["date"] == today for c in data.checks)
+                      or any(v["found_at"].date() == today for vs in data.tariffs.values() for v in vs))
+    stale = sorted(s for s in cfg["suppliers"]
+                   if s not in checked or (today - checked[s]).days > STALE_CHECK_DAYS)
+    warnings = []
+    if not research_today:
+        warnings.append("The research agent recorded nothing today; prices shown are the latest known versions.")
+    if stale:
+        warnings.append(f"Not checked in the last {STALE_CHECK_DAYS} days (or never): {', '.join(stale)}.")
+    if today_row and today_row["status"] == "partial":
+        warnings.append(f"Only {today_row['n_suppliers']} suppliers have a complete price today; "
+                        "today doesn't count towards the averages.")
+
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "today_date": today.isoformat(),
+        "household": cfg["household"],
+        "comparison": cfg["comparison"],
+        "internet_config": {k: cfg["internet"][k] for k in ("min_download_mbps", "address_networks")},
+        "today": today_row,
+        "ranking": [{**version_json(v), "rankable": rankable(v),
+                     "last_checked": checked[v["supplier"]].isoformat() if v["supplier"] in checked else None}
+                    for v in ranking],
+        "history": history,
+        "periods": periods,
+        "fixed_costs": data.fixed_costs,
+        "water": data.water,
+        "budget": budget,
+        "internet": data.internet,
+        "advice": advice(today_row, ranking, periods, data.internet, cfg),
+        "health": {"research_today": research_today, "stale_suppliers": stale, "warnings": warnings},
+    }
 
 
-def todo(cfg, data, today):
-    """What today's run still has to do. Printed for the research agent; changes nothing."""
+def todo(data, today):
+    """What today's research run still has to do."""
+    cfg = data.cfg
     items = []
-    energy = read_csv(data / "energy.csv", ENERGY_FIELDS, ENERGY_REQUIRED)
-    fixed_costs = load_json(data / "fixed_costs.json", {})
-    by_date = load_energy(energy, cfg, fixed_costs)
-    todays = {x["supplier"].lower(): x for x in by_date.get(today, [])}
+    checked = last_checked(data.tariffs, data.checks)
+    month_start = today.day <= 3  # variable tariffs usually change on the 1st
     for s in cfg["suppliers"]:
-        if s.lower() not in todays:
-            items.append(f"ENERGY MISSING: {s} has no row for {today}")
-    for x in todays.values():
-        if x["incomplete"]:
-            items.append(f"ENERGY NO FIXED CHARGE: {x['supplier']} (find its modelcontract tariff sheet)")
+        current = version_on(data.tariffs.get(s, []), today)
+        last = checked.get(s)
+        if current is None:
+            items.append(f"NO TARIFF: {s} has no tariff version valid today")
+        elif not current["complete"]:
+            items.append(f"NO FIXED CHARGE: {s} (current version valid from {current['valid_from']})")
+        elif current["source_type"] == "comparison":
+            items.append(f"UPGRADE SOURCE: {s} is only sourced from a comparison site; find the official tariff sheet")
+        if current is not None and (last is None or (today - last).days >= STALE_CHECK_DAYS
+                                    or (month_start and last < today)):
+            why = "start of the month" if month_start else f"last checked {last}"
+            items.append(f"CHECK FOR NEW VERSION: {s} ({why})")
 
-    internet = read_csv(data / "internet.csv", INTERNET_FIELDS, INTERNET_REQUIRED)
-    week_ago = (today - timedelta(days=7)).isoformat()
-    recent = {r["provider"].lower() for r in internet if r["date"] >= week_ago}
-    done_today = any(r["date"] == today.isoformat() for r in internet)
+    recent = {o["provider"].lower() for o in data.internet_rows
+              if o["date"] >= (today - timedelta(days=7)).isoformat()}
+    done_today = any(o["date"] == today.isoformat() for o in data.internet_rows)
     if len(recent) < 5 or (today.weekday() == 0 and not done_today):
-        items.append(f"INTERNET CHECK DUE: {len(recent)} providers recorded in the last 7 days (need >= 5, and a fresh check every Monday)")
-
+        items.append(f"INTERNET CHECK DUE: {len(recent)} providers recorded in the last 7 days "
+                     "(need >= 5, and a fresh check every Monday)")
     for name in ("fixed_costs.json", "water.json"):
-        checked = load_json(data / name, {}).get("checked_at")
-        if not checked or (today - date.fromisoformat(checked)).days > 31:
-            items.append(f"MONTHLY CHECK DUE: {name} (checked_at {checked or 'missing'})")
+        stamp = load_json(data.dir / name, {}).get("checked_at")
+        if not stamp or (today - date.fromisoformat(stamp)).days > 31:
+            items.append(f"MONTHLY CHECK DUE: {name} (checked_at {stamp or 'missing'})")
     return items
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-dir", default=str(ROOT / "docs" / "data"))
+    ap.add_argument("--data-dir", default=str(ROOT / "data"))
     ap.add_argument("--config", default=str(ROOT / "config.json"))
-    ap.add_argument("--todo", action="store_true", help="print what today's run still has to do, then exit")
+    ap.add_argument("--site-src", default=str(ROOT / "site"))
+    mode = ap.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--todo", action="store_true", help="print today's research checklist")
+    mode.add_argument("--check", action="store_true", help="validate and print today's summary")
+    mode.add_argument("--out", help="validate and build the site into this directory")
     ap.add_argument("--today", help="override today's date (YYYY-MM-DD), for tests")
     args = ap.parse_args()
-    data = Path(args.data_dir)
+
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
-    fixed_costs = load_json(data / "fixed_costs.json", {})
-    water = load_json(data / "water.json", None)
-
-    if args.todo:
-        today = date.fromisoformat(args.today) if args.today else amsterdam_today()
-        try:
-            items = todo(cfg, data, today)
-        except RowError as e:
-            print(f"VALIDATION ERROR: {e}", file=sys.stderr)
-            return 1
-        print(f"TODO for {today} ({today.strftime('%A')}): {len(items)} item(s)")
-        for item in items:
-            print(f"- {item}")
-        if not items:
-            print("- nothing left: every supplier has a complete row today and no checks are due")
-        return 0
-
+    today = date.fromisoformat(args.today) if args.today else amsterdam_today()
     try:
-        by_date = load_energy(read_csv(data / "energy.csv", ENERGY_FIELDS, ENERGY_REQUIRED), cfg, fixed_costs)
-        internet_latest = load_internet(read_csv(data / "internet.csv", INTERNET_FIELDS, INTERNET_REQUIRED))
+        data = Data(Path(args.data_dir), cfg)
     except RowError as e:
         print(f"VALIDATION ERROR: {e}", file=sys.stderr)
         return 1
 
-    history = daily_best(by_date, cfg)
-    write_csv(data / "daily_best.csv", DAILY_BEST_FIELDS, history)
+    if args.todo:
+        items = todo(data, today)
+        print(f"TODO for {today} ({today.strftime('%A')}): {len(items)} item(s)")
+        for item in items:
+            print(f"- {item}")
+        if not items:
+            print("- nothing left: every supplier is complete, official and checked; no checks are due")
+        return 0
 
-    latest_date = max(by_date) if by_date else None
-    today_deals = [deal_json(x) for x in by_date.get(latest_date, [])]
-
-    budget = None
-    if history and fixed_costs:
-        latest = history[-1]
-        grid = fixed_costs.get("grid_costs_eur_year")
-        refund = fixed_costs.get("energy_tax_refund_eur_year")
-        if grid is not None and refund is not None:
-            budget = {
-                "supply_eur_year": latest["structural_annual_eur"],
-                "grid_costs_eur_year": grid,
-                "energy_tax_refund_eur_year": refund,
-                "total_eur_year": round(latest["structural_annual_eur"] + grid - refund, 2),
-            }
-    water_year = water_cost(water, cfg["household"]["annual_water_m3"])
-    if budget is not None and water_year is not None:
-        budget["water_eur_year"] = water_year
-
-    dashboard = {
-        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "household": cfg["household"],
-        "comparison": cfg["comparison"],
-        "latest_date": latest_date.isoformat() if latest_date else None,
-        "today": history[-1] if history else None,
-        "today_deals": today_deals,
-        "history": history,
-        "fixed_costs": fixed_costs,
-        "water": water,
-        "budget": budget,
-        "internet": internet_latest,
-        "advice": advice(history, today_deals, internet_latest, cfg),
-    }
-    (data / "dashboard.json").write_text(json.dumps(dashboard, indent=1, ensure_ascii=False), encoding="utf-8")
-
-    if history:
-        t = history[-1]
+    dash = build(data, today)
+    t = dash["today"]
+    if t:
         print(f"{t['date']} [{t['status']}, {t['n_suppliers']} suppliers] best: {t['best_supplier']} "
               f"EUR {t['structural_annual_eur']}/yr | avg7 {t['avg7_eur']} avg30 {t['avg30_eur']} all {t['avg_all_eur']}")
     else:
-        print("No ranked energy data yet.")
-    for x in by_date.get(latest_date, []):
-        if x["flagged"]:
-            print(f"FLAGGED (price out of range): {x['supplier']} {x['kwh_price']} EUR/kWh", file=sys.stderr)
-        elif x["incomplete"]:
-            print(f"INCOMPLETE (no fixed charge, not ranked): {x['supplier']}", file=sys.stderr)
-        elif x["fixed_carried_from"]:
-            print(f"fixed charge carried from {x['fixed_carried_from']}: {x['supplier']}")
+        print(f"{today}: no supplier has a complete tariff yet.")
+    for v in dash["ranking"]:
+        if v["flagged"]:
+            print(f"FLAGGED (price out of range): {v['supplier']} {v['kwh_price']} EUR/kWh", file=sys.stderr)
+    for w in dash["health"]["warnings"]:
+        print(f"NOTE: {w}")
+
+    if args.out:
+        out = Path(args.out)
+        out.mkdir(parents=True, exist_ok=True)
+        for f in Path(args.site_src).iterdir():
+            if f.is_file():
+                shutil.copy(f, out / f.name)
+        (out / "data").mkdir(exist_ok=True)
+        for f in Path(args.data_dir).iterdir():  # raw data stays downloadable for transparency
+            if f.suffix in (".csv", ".json"):
+                shutil.copy(f, out / "data" / f.name)
+        with (out / "data" / "daily_best.csv").open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=DAILY_FIELDS, extrasaction="ignore", lineterminator="\n")
+            w.writeheader()
+            w.writerows(dash["history"])
+        (out / "dashboard.json").write_text(json.dumps(dash, indent=1, ensure_ascii=False), encoding="utf-8")
     return 0
 
 
