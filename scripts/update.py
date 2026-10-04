@@ -322,15 +322,67 @@ def advice(history, today_deals, internet, cfg):
     return out
 
 
+def amsterdam_today():
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Europe/Amsterdam")).date()
+    except Exception:  # no tz database (e.g. Windows without tzdata)
+        return date.today()
+
+
+def todo(cfg, data, today):
+    """What today's run still has to do. Printed for the research agent; changes nothing."""
+    items = []
+    energy = read_csv(data / "energy.csv", ENERGY_FIELDS, ENERGY_REQUIRED)
+    fixed_costs = load_json(data / "fixed_costs.json", {})
+    by_date = load_energy(energy, cfg, fixed_costs)
+    todays = {x["supplier"].lower(): x for x in by_date.get(today, [])}
+    for s in cfg["suppliers"]:
+        if s.lower() not in todays:
+            items.append(f"ENERGY MISSING: {s} has no row for {today}")
+    for x in todays.values():
+        if x["incomplete"]:
+            items.append(f"ENERGY NO FIXED CHARGE: {x['supplier']} (find its modelcontract tariff sheet)")
+
+    internet = read_csv(data / "internet.csv", INTERNET_FIELDS, INTERNET_REQUIRED)
+    week_ago = (today - timedelta(days=7)).isoformat()
+    recent = {r["provider"].lower() for r in internet if r["date"] >= week_ago}
+    done_today = any(r["date"] == today.isoformat() for r in internet)
+    if len(recent) < 5 or (today.weekday() == 0 and not done_today):
+        items.append(f"INTERNET CHECK DUE: {len(recent)} providers recorded in the last 7 days (need >= 5, and a fresh check every Monday)")
+
+    for name in ("fixed_costs.json", "water.json"):
+        checked = load_json(data / name, {}).get("checked_at")
+        if not checked or (today - date.fromisoformat(checked)).days > 31:
+            items.append(f"MONTHLY CHECK DUE: {name} (checked_at {checked or 'missing'})")
+    return items
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", default=str(ROOT / "docs" / "data"))
     ap.add_argument("--config", default=str(ROOT / "config.json"))
+    ap.add_argument("--todo", action="store_true", help="print what today's run still has to do, then exit")
+    ap.add_argument("--today", help="override today's date (YYYY-MM-DD), for tests")
     args = ap.parse_args()
     data = Path(args.data_dir)
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
     fixed_costs = load_json(data / "fixed_costs.json", {})
     water = load_json(data / "water.json", None)
+
+    if args.todo:
+        today = date.fromisoformat(args.today) if args.today else amsterdam_today()
+        try:
+            items = todo(cfg, data, today)
+        except RowError as e:
+            print(f"VALIDATION ERROR: {e}", file=sys.stderr)
+            return 1
+        print(f"TODO for {today} ({today.strftime('%A')}): {len(items)} item(s)")
+        for item in items:
+            print(f"- {item}")
+        if not items:
+            print("- nothing left: every supplier has a complete row today and no checks are due")
+        return 0
 
     try:
         by_date = load_energy(read_csv(data / "energy.csv", ENERGY_FIELDS, ENERGY_REQUIRED), cfg, fixed_costs)

@@ -186,6 +186,32 @@ class UpdateTest(unittest.TestCase):
         self.assertAlmostEqual(update.water_cost(json.loads((self.dir / "water.json").read_text()), 90),
                                round(56.68 + (1.34 + 0.437 * 1.09) * 90, 2))
 
+    def test_todo_lists_missing_work(self):
+        cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+        first, second = cfg["suppliers"][0], cfg["suppliers"][1]
+        write(self.dir / "energy.csv", [row("2026-10-04", first), row("2026-10-04", second, fixed="")])
+        (self.dir / "water.json").write_text(json.dumps({"checked_at": "2026-08-01"}))
+        items = update.todo(cfg, self.dir, date(2026, 10, 4))
+        text = "\n".join(items)
+        self.assertNotIn(f"ENERGY MISSING: {first} ", text)
+        self.assertIn(f"ENERGY MISSING: {cfg['suppliers'][2]} ", text)
+        self.assertIn(f"ENERGY NO FIXED CHARGE: {second}", text)
+        self.assertIn("INTERNET CHECK DUE: 0 providers", text)
+        # A single provider checked today is not enough.
+        with (self.dir / "internet.csv").open("w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=update.INTERNET_FIELDS)
+            w.writeheader()
+            w.writerow({k: "" for k in update.INTERNET_FIELDS} | {"date": "2026-10-04", "provider": "Delta",
+                                                                  "price_eur_month": "40", "source_url": "https://x.nl"})
+        self.assertIn("INTERNET CHECK DUE: 1 providers", "\n".join(update.todo(cfg, self.dir, date(2026, 10, 4))))
+        self.assertIn("MONTHLY CHECK DUE: water.json", text)  # 64 days old
+        self.assertNotIn("fixed_costs.json", text)  # setUp's file was checked 3 days ago
+        res = subprocess.run([sys.executable, str(ROOT / "scripts" / "update.py"), "--data-dir", str(self.dir),
+                              "--todo", "--today", "2026-10-04"], capture_output=True, text=True)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("TODO for 2026-10-04 (Sunday)", res.stdout)
+        self.assertFalse((self.dir / "dashboard.json").exists())  # --todo writes nothing
+
     def test_missing_source_url_fails_without_writing(self):
         write(self.dir / "energy.csv", [row("2026-10-01", "A", source_url="")])
         res = run(self.dir)

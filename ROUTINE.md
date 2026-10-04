@@ -7,6 +7,23 @@ arithmetic (annual costs, rankings, averages). You never compute or write averag
 Read `config.json` first. It has the household profile (all-electric, annual kWh, variable contracts only) and the
 supplier list.
 
+## Your work list comes from the script: always start with it
+```bash
+python3 scripts/update.py --todo
+```
+This prints today's checklist:
+- `ENERGY MISSING` — the supplier has no row today.
+- `ENERGY NO FIXED CHARGE` — there's a row, but no fixed charge, today or carried forward.
+- `INTERNET CHECK DUE`
+- `MONTHLY CHECK DUE`
+
+**Work through every item on it**, including when an earlier run today already added rows. A re-run continues where
+the last one stopped. It never means "today is done".
+
+You may only finish when either `--todo` prints "nothing left", or each remaining item has had a real attempt: at least
+two different sources tried (e.g. the supplier's tariff PDF and a comparison site). List every remaining item with what
+you tried in your final message. A run that ends after a couple of minutes with items left is a failed run.
+
 ## Honesty rules (most important)
 - **Every row needs a `source_url`** to the page where you saw the price. No URL means no row.
 - **Never estimate or guess a price**, and never copy a kWh price from an earlier day. If you can't find a supplier's
@@ -17,9 +34,10 @@ supplier list.
 - **The fixed monthly charge is the one exception to "same day":** if you can't find it today, leave
   `fixed_supply_eur_month` empty. `update.py` then reuses that supplier's most recent sourced value (up to 92 days old)
   and marks it as carried forward. Never type an old value in yourself.
-- **Always write the rows you have.** Partial data is much better than none. A day with fewer than 8 complete suppliers
-  is marked partial by the script and left out of the averages, which is fine. Only skip the commit if you found
-  nothing at all.
+- **Always write the rows you have.** Partial data is much better than none. If you found a current kWh price but no
+  fixed charge, still write the row with the fixed-charge columns empty. Example: Essent's news page says
+  "€0.3109/kWh from 1 Oct": write that row. A day with fewer than 8 complete suppliers is marked partial by the script
+  and left out of the averages, which is fine. Only skip the commit if you found nothing at all.
 - Record prices exactly as published. Don't round.
 
 ## How to research (be persistent)
@@ -90,7 +108,7 @@ Append one row per supplier to `docs/data/energy.csv`:
 
 Use proper CSV quoting for any text that contains commas.
 
-### 2. Internet: Mondays only (or if `docs/data/internet.csv` has fewer than 5 providers in the last 7 days)
+### 2. Internet: whenever `--todo` says `INTERNET CHECK DUE`, whatever day of the week it is
 The household is 2 adults with no TV package needed (see `config.json` → `internet.need`). Anything from
 `internet.min_download_mbps` (100 Mbit/s) up is fine.
 
@@ -119,7 +137,7 @@ The household is 2 adults with no TV package needed (see `config.json` → `inte
 
 `update.py` calculates the first-year cost from these columns. Don't calculate it yourself.
 
-### 3. Fixed costs + water: first run of each month (or if `checked_at` in those files is > 31 days old)
+### 3. Fixed costs + water: whenever `--todo` says `MONTHLY CHECK DUE`
 Update `docs/data/fixed_costs.json`:
 ```json
 {
@@ -151,7 +169,8 @@ python3 scripts/update.py
 - If it prints `FLAGGED`, re-check that supplier's price. If the price is really out of range, keep the row (it's
   excluded from the ranking) and explain in `notes`.
 
-Then commit and push:
+Run `python3 scripts/update.py --todo` again. If items are left that you haven't really attempted yet, go back and
+work on them. Then commit and push:
 ```bash
 git add -A
 git commit -m "data: <date> best <supplier> €<structural>/yr (<n> suppliers)"
