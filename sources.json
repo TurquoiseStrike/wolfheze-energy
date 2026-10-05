@@ -37,10 +37,14 @@
       "https://www.keuze.nl/energie/energieleveranciers/vandebron"
     ],
     "Essent": [
-      "https://www.essent.nl/over-essent/nieuws/essent-past-variabele-tarieven-aan-per-1-oktober-2026/"
+      "https://www.essent.nl/over-essent/nieuws/essent-past-variabele-tarieven-aan-per-1-oktober-2026/",
+      "https://www.essent.nl/-/media/essent/documenten/productvoorwaarden/202601_essent_productvoorwaarden_variabel.pdf",
+      "https://www.essent.nl/-/media/essent-zakelijk/documenten/modelcontract/tb-essent-sme-mdc-acq-2026-04.pdf"
     ],
     "Energiedirect": [
-      "https://www.keuze.nl/energie/energieleveranciers/energiedirect"
+      "https://www.keuze.nl/energie/energieleveranciers/energiedirect",
+      "https://www.energiedirect.nl/-/media/energiedirect/documenten/productvoorwaarden/productvoorwaarden-modelcontract.pdf",
+      "https://www.gaslicht.com/userfiles/pdf/energie/energiedirect/pakketten/pakket-voorwaarden/PV260101-Productvoorwaarden-Energiedirect.pdf"
     ]
   },
   "fixed_costs": [

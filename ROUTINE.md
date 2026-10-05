@@ -93,10 +93,41 @@ tariff for a **new customer** in the Liander grid area. Best sources, in order:
 | `fixed_source_url` | where you read the fixed charge, only if it's a different page |
 | `found_at` | `date -Iseconds` |
 | `notes` | anything odd or ambiguous |
+| `assumption` | anything you had to assume (see the honesty rules); empty if nothing |
+| `product_kind` | `modelcontract` or `standard` (see "Which product" below) |
 
 For every supplier you checked whose current version was already correct, append to `data/checks.csv`:
 `date,supplier,result,notes` with `result` = `unchanged`, or `not_found` if you couldn't reach any current price.
 Use `new_version` when you added a tariff row.
+
+### Which product: compare like with like
+Many suppliers have **two** variable products with different prices:
+- the legally standardised **modelcontract** (at some suppliers its price only changes on 1 January and 1 July), and
+- their own **standard** variable product (often changes monthly, e.g. Essent's 1 Oct 2026 increase).
+
+Record the **cheapest variable product a new customer can sign up for**, and set `product_kind` to `modelcontract` or
+`standard`. If you know both prices, add both as separate rows: the cheaper one counts, and the other is useful
+history. If a source doesn't say which product a price belongs to (press releases often say just "variable"), write
+that in `assumption`.
+
+### Blocked suppliers: the document routes
+Some suppliers' **web pages** refuse automated browsers (see `sources.json` → `blocked`), but their **documents** are
+served from separate file paths that are usually reachable with plain `curl`. Try these, in order:
+1. **Search for the PDF directly**: WebSearch with the supplier's domain and terms like `tarieven modelcontract
+   consument pdf`, `tarievenblad variabel`, `tb-` (Essent's sheets are named like `tb-essent-...pdf`). Look at the
+   URL patterns of documents you do find, such as the business sheet
+   `essent.nl/-/media/essent-zakelijk/documenten/modelcontract/tb-essent-sme-mdc-acq-2026-04.pdf`, and try the
+   consumer equivalent (e.g. `/-/media/essent/documenten/...`). Energiedirect is part of the same group, with similar
+   paths under `energiedirect.nl/-/media/energiedirect/documenten/`.
+2. **Document mirrors**: gaslicht.com keeps copies of supplier documents under
+   `gaslicht.com/userfiles/pdf/energie/<supplier>/...` (tariff sheets as well as terms). These are copies of official
+   documents: use `source_type=official` and note "mirror of the supplier's PDF" in `notes`.
+3. **Press releases / newsroom pages** (e.g. `essent.nl/over-essent/nieuws/...`) aren't blocked. They often state the
+   new kWh price and sometimes the fixed charge.
+4. **Comparison sites** as a last resort, with `source_type=comparison`.
+
+Never try to disguise the browser or get around a block (no stealth plugins, no proxies). If nothing works, leave
+the item for the owner: it's listed under *Help wanted* on the dashboard.
 
 ### Backfill (`BACKFILL` items, low priority)
 The forecast learns how fast each supplier passes wholesale price moves on to customers, which needs price history.

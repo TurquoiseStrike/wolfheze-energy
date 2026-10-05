@@ -33,9 +33,12 @@ TARIFF_FIELDS = [
     "supplier", "product", "valid_from", "kwh_single", "kwh_normal", "kwh_dal", "tax_basis",
     "fixed_supply_eur_month", "fixed_supply_eur_day", "fixed_supply_eur_year", "welcome_bonus_eur",
     "feedin_payment_eur_kwh", "feedin_cost_eur_kwh", "feedin_cost_desc",
-    "source_type", "source_url", "fixed_source_url", "found_at", "notes", "assumption",
+    "source_type", "source_url", "fixed_source_url", "found_at", "notes", "assumption", "product_kind",
 ]
 TARIFF_REQUIRED = ["supplier", "valid_from", "source_type", "source_url", "found_at"]
+# Suppliers often have two variable products with different prices: the legally standardised modelcontract
+# (price changes only 1 Jan / 1 Jul at some suppliers) and their own standard variable product.
+PRODUCT_KINDS = ("", "modelcontract", "standard")
 # official = supplier's own site/sheet; manual = owner copied it from the supplier's site; comparison = third party
 SOURCE_TYPES = ("official", "manual", "comparison")
 
@@ -201,6 +204,8 @@ def load_tariffs(rows, cfg, fixed_costs):
             raise RowError(f"{where}: fixed_source_url invalid")
         if row["source_type"] not in SOURCE_TYPES:
             raise RowError(f"{where}: source_type must be one of {SOURCE_TYPES}")
+        if row["product_kind"] not in PRODUCT_KINDS:
+            raise RowError(f"{where}: product_kind must be 'modelcontract', 'standard' or empty")
         kwh = effective_kwh(row, where, hh["dual_tariff_normal_share"], fixed_costs)
         version = {
             "supplier": supplier,
@@ -219,6 +224,7 @@ def load_tariffs(rows, cfg, fixed_costs):
             "source_url": row["source_url"],
             "notes": row["notes"],
             "assumption": row["assumption"],
+            "product_kind": row["product_kind"],
             "flagged": not (cmp_["kwh_price_sane_min"] <= kwh <= cmp_["kwh_price_sane_max"]),
         }
         key = (supplier, version["valid_from"])
@@ -832,13 +838,15 @@ def todo(data, today):
     items = []
     checked = last_checked(data.tariffs, data.checks)
     month_start_window = today.day <= 3  # variable tariffs usually change on the 1st
+    blocked = data.sources.get("blocked", {})
     for s in cfg["suppliers"]:
         current = version_on(data.tariffs.get(s, []), today)
         last = checked.get(s)
+        hint = " [website blocks automated browsers: use the document routes in ROUTINE.md]" if s in blocked else ""
         if current is None:
-            items.append(f"NO TARIFF: {s} has no tariff version valid today")
+            items.append(f"NO TARIFF: {s} has no tariff version valid today{hint}")
         elif not current["complete"]:
-            items.append(f"NO FIXED CHARGE: {s} (current version valid from {current['valid_from']})")
+            items.append(f"NO FIXED CHARGE: {s} (current version valid from {current['valid_from']}){hint}")
         elif current["source_type"] == "comparison":
             items.append(f"UPGRADE SOURCE: {s} is only sourced from a comparison site; find the official tariff sheet")
         elif current["assumption"]:
