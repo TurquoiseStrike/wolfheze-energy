@@ -63,8 +63,15 @@
     ]
   },
   "blocked": {
-    "Essent": "consumer tariff pages return HTTP 403 (CloudFront) to automated browsers (seen 2026-10-04)",
-    "Energiedirect": "HTTP 403 (CloudFront) to automated browsers (seen 2026-10-04)",
+    "Essent": "website + tariff window refuse automated browsers; fixed-contract sheets reachable as PDF (see document_patterns); variable fixed charge: owner enters it in manual.csv",
+    "Energiedirect": "same platform as Essent: tariffs only in the website's tariff window after a postcode; owner enters the fixed charge in manual.csv",
     "Vattenfall": "prices only behind a postcode form that the browser could not complete (2026-10-04/05)"
+  },
+  "document_patterns": {
+    "Essent": {
+      "fixed_offers": "https://www.essent.nl/-/media/essent/documenten/tarieven/<maand>-<jaar>/tb-ref-zhg-<1jr|3jr>-vast-ess-incl-btw-<dd-mm-jjjj>.pdf",
+      "example": "https://www.essent.nl/-/media/essent/documenten/tarieven/april-2026/tb-ref-zhg-3jr-vast-ess-incl-btw-01-04-2026.pdf",
+      "note": "Official consumer reference tariffs (fixed contracts), reachable with curl. The variable tariffs and the fixed supply charge are only shown in the website's tariff window after a postcode, which blocks automated access. Find the current month's sheet via WebSearch 'tb-ref-zhg essent <maand> 2026'."
+    }
   }
 }
