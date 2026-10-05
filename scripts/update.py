@@ -21,16 +21,40 @@ import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import forecast  # noqa: E402
+import market as market_data  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
+SITE_URL = "https://turquoisestrike.github.io/wolfheze-energy/"
+REPO_URL = "https://github.com/TurquoiseStrike/wolfheze-energy"
 
 TARIFF_FIELDS = [
     "supplier", "product", "valid_from", "kwh_single", "kwh_normal", "kwh_dal", "tax_basis",
     "fixed_supply_eur_month", "fixed_supply_eur_day", "fixed_supply_eur_year", "welcome_bonus_eur",
     "feedin_payment_eur_kwh", "feedin_cost_eur_kwh", "feedin_cost_desc",
-    "source_type", "source_url", "fixed_source_url", "found_at", "notes",
+    "source_type", "source_url", "fixed_source_url", "found_at", "notes", "assumption",
 ]
 TARIFF_REQUIRED = ["supplier", "valid_from", "source_type", "source_url", "found_at"]
-SOURCE_TYPES = ("official", "comparison")
+# official = supplier's own site/sheet; manual = owner copied it from the supplier's site; comparison = third party
+SOURCE_TYPES = ("official", "manual", "comparison")
+
+# Owner-entered prices (data/manual.csv), kept deliberately simple for editing on github.com.
+MANUAL_FIELDS = ["supplier", "valid_from", "kwh_single", "kwh_normal", "kwh_dal", "fixed_supply_eur_month",
+                 "source_url", "entered_on", "notes"]
+
+OFFER_FIELDS = [
+    "supplier", "contract_type", "product", "valid_from", "kwh_single", "kwh_normal", "kwh_dal", "tax_basis",
+    "fixed_supply_eur_month", "fixed_supply_eur_day", "fixed_supply_eur_year", "dynamic_markup_eur_kwh",
+    "welcome_bonus_eur", "source_type", "source_url", "found_at", "notes", "assumption",
+]
+OFFER_REQUIRED = ["supplier", "contract_type", "valid_from", "source_type", "source_url", "found_at"]
+CONTRACT_TYPES = ("fixed_1y", "fixed_3y", "dynamic")
+CONTRACT_LABELS = {"variable": "variable", "fixed_1y": "fixed 1-year", "fixed_3y": "fixed 3-year", "dynamic": "dynamic"}
+
+EVENT_FIELDS = ["date", "scope", "supplier", "type", "summary", "url"]
+RUN_FIELDS = ["date", "started_at", "finished_at", "todo_before", "todo_after", "new_versions", "notes"]
+FORECAST_LOG_FIELDS = forecast.FORECAST_FIELDS
 
 CHECK_FIELDS = ["date", "supplier", "result", "notes"]
 CHECK_RESULTS = ("unchanged", "new_version", "not_found")
@@ -166,7 +190,7 @@ def load_tariffs(rows, cfg, fixed_costs):
     names = supplier_lookup(cfg)
     latest = {}
     for i, row in enumerate(rows, start=2):  # row 1 is the header
-        where = f"tariffs.csv row {i}"
+        where = row.get("_where") or f"tariffs.csv row {i}"
         supplier = names.get(row["supplier"].lower())
         if supplier is None:
             raise RowError(f"{where}: unknown supplier {row['supplier']!r}. Use the exact name from "
@@ -194,6 +218,7 @@ def load_tariffs(rows, cfg, fixed_costs):
             "source_type": row["source_type"],
             "source_url": row["source_url"],
             "notes": row["notes"],
+            "assumption": row["assumption"],
             "flagged": not (cmp_["kwh_price_sane_min"] <= kwh <= cmp_["kwh_price_sane_max"]),
         }
         key = (supplier, version["valid_from"])
@@ -221,6 +246,60 @@ def load_tariffs(rows, cfg, fixed_costs):
                 v["structural_annual_eur"] = v["year1_annual_eur"] = None
             prev = v
     return by_supplier
+
+
+def manual_as_tariffs(rows):
+    """Owner-entered prices (data/manual.csv) as tariff rows with source_type=manual."""
+    out = []
+    for i, r in enumerate(rows, start=2):
+        entered = parse_day(r["entered_on"], f"manual.csv row {i}")
+        out.append({f: "" for f in TARIFF_FIELDS} | {
+            "supplier": r["supplier"], "product": "Variabel (entered manually)", "valid_from": r["valid_from"],
+            "kwh_single": r["kwh_single"], "kwh_normal": r["kwh_normal"], "kwh_dal": r["kwh_dal"],
+            "tax_basis": "incl", "fixed_supply_eur_month": r["fixed_supply_eur_month"], "welcome_bonus_eur": "0",
+            "source_type": "manual", "source_url": r["source_url"],
+            # Manual entries are dated, not timed: use noon. As with any correction, the latest found_at wins.
+            "found_at": f"{entered.isoformat()}T12:00:00+01:00", "notes": r["notes"],
+            "_where": f"manual.csv row {i}",
+        })
+    return out
+
+
+def load_offers(rows, cfg, fixed_costs, today):
+    """Fixed and dynamic offers: the newest version valid today per (supplier, contract_type)."""
+    names = {s.lower(): s for s in cfg["suppliers"] + cfg.get("dynamic_suppliers", [])}
+    latest = {}
+    for i, row in enumerate(rows, start=2):
+        where = f"offers.csv row {i}"
+        supplier = names.get(row["supplier"].lower())
+        if supplier is None:
+            raise RowError(f"{where}: unknown supplier {row['supplier']!r} (add it to config.json suppliers or dynamic_suppliers)")
+        if row["contract_type"] not in CONTRACT_TYPES:
+            raise RowError(f"{where}: contract_type must be one of {CONTRACT_TYPES}")
+        if row["source_type"] not in SOURCE_TYPES or not row["source_url"].startswith("http"):
+            raise RowError(f"{where}: needs source_type in {SOURCE_TYPES} and an http(s) source_url")
+        offer = {
+            "supplier": supplier, "contract_type": row["contract_type"], "product": row["product"],
+            "valid_from": parse_day(row["valid_from"], where), "found_at": parse_moment(row["found_at"], where),
+            "fixed_supply_eur_month": monthly_fixed(row, where),
+            "welcome_bonus_eur": num(row["welcome_bonus_eur"], "welcome_bonus_eur", where) or 0.0,
+            "source_type": row["source_type"], "source_url": row["source_url"], "notes": row["notes"],
+            "assumption": row["assumption"],
+        }
+        if row["contract_type"] == "dynamic":
+            offer["dynamic_markup_eur_kwh"] = num(row["dynamic_markup_eur_kwh"], "dynamic_markup_eur_kwh", where,
+                                                  required=True)
+            offer["kwh_price"] = None
+        else:
+            offer["kwh_price"] = round(effective_kwh(row, where, cfg["household"]["dual_tariff_normal_share"],
+                                                     fixed_costs), 5)
+        if offer["valid_from"] > today:
+            continue
+        key = (supplier, offer["contract_type"])
+        if key not in latest or (offer["valid_from"], offer["found_at"]) >= (latest[key]["valid_from"],
+                                                                            latest[key]["found_at"]):
+            latest[key] = offer
+    return list(latest.values())
 
 
 def version_on(versions, day):
@@ -378,23 +457,57 @@ def water_cost(water, m3):
 
 # ---------- assembling ----------
 
+def load_events(rows):
+    for i, r in enumerate(rows, start=2):
+        parse_day(r["date"], f"events.csv row {i}")
+        if r["url"] and not r["url"].startswith("http"):
+            raise RowError(f"events.csv row {i}: url must start with http")
+    return sorted(rows, key=lambda r: r["date"], reverse=True)
+
+
+def load_runs(rows):
+    out = []
+    for i, r in enumerate(rows, start=2):
+        where = f"runs.csv row {i}"
+        start, end = parse_moment(r["started_at"], where), parse_moment(r["finished_at"], where)
+        out.append({"date": parse_day(r["date"], where).isoformat(),
+                    "minutes": round((end - start).total_seconds() / 60, 1),
+                    "todo_before": num(r["todo_before"], "todo_before", where),
+                    "todo_after": num(r["todo_after"], "todo_after", where),
+                    "new_versions": num(r["new_versions"], "new_versions", where), "notes": r["notes"]})
+    return out
+
+
 class Data:
     """All raw inputs, validated. Raises RowError on bad data."""
 
-    def __init__(self, data_dir, cfg):
+    def __init__(self, data_dir, cfg, sources_path=None):
         self.cfg = cfg
         self.dir = data_dir
         self.fixed_costs = load_json(data_dir / "fixed_costs.json", {})
         self.water = load_json(data_dir / "water.json", None)
-        self.tariffs = load_tariffs(read_csv(data_dir / "tariffs.csv", TARIFF_FIELDS, TARIFF_REQUIRED),
+        manual = manual_as_tariffs(read_csv(data_dir / "manual.csv", MANUAL_FIELDS, MANUAL_FIELDS))
+        self.tariffs = load_tariffs(read_csv(data_dir / "tariffs.csv", TARIFF_FIELDS, TARIFF_REQUIRED) + manual,
                                     cfg, self.fixed_costs)
         self.checks = load_checks(read_csv(data_dir / "checks.csv", CHECK_FIELDS, CHECK_FIELDS), cfg)
         self.internet_rows = read_csv(data_dir / "internet.csv", INTERNET_FIELDS, INTERNET_REQUIRED)
         self.internet = load_internet(self.internet_rows)
+        self.offer_rows = read_csv(data_dir / "offers.csv", OFFER_FIELDS, OFFER_REQUIRED)
+        load_offers(self.offer_rows, cfg, self.fixed_costs, date.max)  # validate every row
+        self.events = load_events(read_csv(data_dir / "events.csv", EVENT_FIELDS, EVENT_FIELDS))
+        self.calendar = load_json(data_dir / "calendar.json", [])
+        self.runs = load_runs(read_csv(data_dir / "runs.csv", RUN_FIELDS, RUN_FIELDS))
+        self.forecast_log = read_csv(data_dir / "forecasts.csv", FORECAST_LOG_FIELDS, FORECAST_LOG_FIELDS)
+        self.sources = load_json(sources_path or (data_dir.parent / "sources.json"), {})
 
 
 def version_json(v):
     return {k: (val.isoformat() if isinstance(val, (date, datetime)) else val) for k, val in v.items()}
+
+
+def trusted(v):
+    """Good enough to recommend: rankable, not only from a comparison site, no stated assumption."""
+    return rankable(v) and v["source_type"] != "comparison" and not v["assumption"]
 
 
 def advice(today_row, ranking, periods, internet, cfg):
@@ -402,14 +515,17 @@ def advice(today_row, ranking, periods, internet, cfg):
     out = {}
     if today_row:
         ranked = [v for v in ranking if rankable(v)]
-        runner = ranked[1] if len(ranked) > 1 else None
-        best = ranked[0]
+        pool = [v for v in ranked if not v["assumption"]] or ranked
+        best = pool[0]
+        runner = pool[1] if len(pool) > 1 else None
         out["energy"] = {
             "supplier": best["supplier"], "product": best["product"], "annual_eur": best["structural_annual_eur"],
             "kwh_price": best["kwh_price"], "fixed_supply_eur_month": best["fixed_supply_eur_month"],
             "source_type": best["source_type"], "source_url": best["source_url"],
             "runner_up": runner["supplier"] if runner else None,
             "gap_eur": round(runner["structural_annual_eur"] - best["structural_annual_eur"], 2) if runner else None,
+            "skipped_assumptions": [v["supplier"] for v in ranked
+                                    if v["assumption"] and v["structural_annual_eur"] < best["structural_annual_eur"]],
         }
         # Longest window in which at least two suppliers have enough data: who is cheap consistently.
         for n in reversed(PERIODS):
@@ -440,7 +556,193 @@ def advice(today_row, ranking, periods, internet, cfg):
     return out
 
 
-def build(data, today):
+def month_start(d):
+    return date(d.year, d.month, 1)
+
+
+def announced(tariffs, today):
+    """Tariff versions that start after today, with the change against the version they replace."""
+    out = []
+    for supplier, versions in tariffs.items():
+        current = version_on(versions, today)
+        for v in versions:
+            if v["valid_from"] <= today:
+                continue
+            before = current["kwh_price"] if current else None
+            out.append({"supplier": supplier, "valid_from": v["valid_from"].isoformat(), "kwh_price": v["kwh_price"],
+                        "previous_kwh_price": before,
+                        "change_pct": round(v["kwh_price"] / before - 1, 4) if before else None,
+                        "structural_annual_eur": v["structural_annual_eur"], "source_url": v["source_url"]})
+            current = v
+    return sorted(out, key=lambda a: (a["valid_from"], a["supplier"]))
+
+
+def first_year_start(cfg, today):
+    """The forecast covers 12 months from move-in (or from next month once moved in)."""
+    move_in = month_start(date.fromisoformat(cfg["household"]["move_in"]))
+    return max(move_in, forecast.add_months(month_start(today), 1))
+
+
+def variable_forecasts(data, today, wholesale, start):
+    rows = []
+    for supplier, versions in data.tariffs.items():
+        current = version_on(versions, today)
+        if not rankable(current):
+            continue
+        pt = forecast.pass_through(versions, data.cfg, wholesale)
+        fy = forecast.first_year(versions, data.cfg, wholesale, start, current["fixed_supply_eur_month"],
+                                 pt["lag_months"] if pt else None)
+        if fy is None:
+            continue
+        rows.append({"supplier": supplier, "contract_type": "variable", "source_type": current["source_type"],
+                     "assumption": current["assumption"], "trusted": trusted(current), "pass_through": pt,
+                     "today_annual_eur": current["structural_annual_eur"], **fy})
+    return sorted(rows, key=lambda r: r["base"])
+
+
+def contract_options(data, today, wholesale, start):
+    """Fixed 1y/3y and dynamic offers, costed over the same first year as the variable forecast."""
+    cfg = data.cfg
+    annual = cfg["household"]["annual_kwh"]
+    rows = []
+    for o in load_offers(data.offer_rows, cfg, data.fixed_costs, today):
+        fixed = o["fixed_supply_eur_month"]
+        row = {"supplier": o["supplier"], "contract_type": o["contract_type"], "product": o["product"],
+               "valid_from": o["valid_from"].isoformat(), "kwh_price": o["kwh_price"],
+               "dynamic_markup_eur_kwh": o.get("dynamic_markup_eur_kwh"), "fixed_supply_eur_month": fixed,
+               "welcome_bonus_eur": o["welcome_bonus_eur"], "source_type": o["source_type"],
+               "source_url": o["source_url"], "assumption": o["assumption"], "notes": o["notes"],
+               "base": None, "low": None, "high": None, "last_12_months": None}
+        if fixed is not None:
+            if o["contract_type"] == "dynamic":
+                m = o["dynamic_markup_eur_kwh"]
+                paths = [forecast.dynamic_path(m, cfg, wholesale, start, 12, s) for s in (0.0, -1.0, 1.0)]
+                if paths[0]:
+                    row["base"], row["low"], row["high"] = (forecast.path_cost(p, cfg, start, fixed) for p in paths)
+                    past = forecast.add_months(month_start(today), -12)
+                    row["last_12_months"] = forecast.path_cost(
+                        forecast.dynamic_path(m, cfg, wholesale, past, 12), cfg, past, fixed)
+            else:
+                row["base"] = row["low"] = row["high"] = round(annual * o["kwh_price"] + 12 * fixed, 2)
+        rows.append(row)
+    return sorted(rows, key=lambda r: (r["contract_type"], r["base"] is None, r["base"] or 0))
+
+
+def best_by_type(variable_rows, options):
+    best = {}
+    pool = [r for r in variable_rows if r["trusted"]] or variable_rows
+    if pool:
+        best["variable"] = pool[0]
+    for t in CONTRACT_TYPES:
+        candidates = [r for r in options if r["contract_type"] == t and r["base"] is not None]
+        if candidates:
+            best[t] = min(candidates, key=lambda r: r["base"])
+    return best
+
+
+def decision(cfg, today, variable_rows, best, mkt):
+    """The recommendation card: what to choose, the expected range, confidence, and what would change it."""
+    deadlines = [{"what": d["what"], "by": d["by"], "days_left": (date.fromisoformat(d["by"]) - today).days}
+                 for d in cfg.get("decisions", [])]
+    out = {"deadlines": deadlines, "first_year_from": None, "pick": None, "reasons": [], "watch": []}
+    v = best.get("variable")
+    if not v:
+        return out
+    pool = [r for r in variable_rows if r["trusted"]] or variable_rows
+    runner = pool[1] if len(pool) > 1 else None
+    width = (v["high"] - v["low"]) / v["base"] if v["base"] else 1
+    n_trusted = sum(r["trusted"] for r in variable_rows)
+    confidence = ("high" if width < 0.10 and n_trusted >= 6 else
+                  "medium" if width < 0.25 and n_trusted >= 4 else "low")
+    pick = {"contract_type": "variable", "supplier": v["supplier"], "base": v["base"], "low": v["low"],
+            "high": v["high"], "confidence": confidence}
+    # A fixed contract wins if it beats the expected variable cost by a clear margin.
+    for t in ("fixed_1y", "fixed_3y"):
+        f = best.get(t)
+        if f and f["base"] < v["base"] - 50:
+            pick = {"contract_type": t, "supplier": f["supplier"], "base": f["base"], "low": f["base"],
+                    "high": f["base"], "confidence": confidence}
+            out["reasons"].append(f"A {CONTRACT_LABELS[t]} contract from {f['supplier']} "
+                                  f"(EUR {f['base']:.0f}) beats the expected variable cost (EUR {v['base']:.0f}).")
+            break
+    out["pick"] = pick
+    if not v["trusted"]:
+        out["watch"].append(f"{v['supplier']}'s price isn't confirmed by the supplier yet.")
+    if runner and runner["base"] - v["base"] < 50:
+        out["watch"].append(f"{runner['supplier']} is only EUR {runner['base'] - v['base']:.0f}/year more expensive; "
+                            "re-check after its next price change.")
+    f1 = best.get("fixed_1y")
+    if pick["contract_type"] == "variable" and f1 and f1["base"] < v["high"]:
+        out["watch"].append(f"If wholesale prices keep rising (high scenario EUR {v['high']:.0f}), a fixed 1-year "
+                            f"contract from {f1['supplier']} at EUR {f1['base']:.0f} would be cheaper.")
+    d = best.get("dynamic")
+    if d and d["base"] is not None and d["base"] < pick["base"]:
+        out["watch"].append(f"A dynamic contract ({d['supplier']}) is expected at EUR {d['base']:.0f}, "
+                            "cheaper but with hour-to-hour price risk.")
+    if mkt and mkt.get("power", {}).get("change_30d") is not None:
+        ch = mkt["power"]["change_30d"]
+        if abs(ch) >= 0.05:
+            out["reasons"].append(f"Wholesale power is {'up' if ch > 0 else 'down'} {abs(ch):.0%} over 30 days; "
+                                  "variable tariffs usually follow within 1-3 months, which the forecast includes.")
+    if not v["pass_through"]:
+        out["reasons"].append("The forecast uses a default 2-month delay until there's enough price history "
+                              "per supplier.")
+    return out
+
+
+def switch_alert(data, today):
+    """After moving in: alert when another supplier was cheaper by the threshold on every day of the last 60."""
+    cc = data.cfg.get("current_contract") or {}
+    supplier, since = cc.get("supplier"), cc.get("since")
+    if not supplier or not since or supplier not in data.tariffs:
+        return None
+    threshold = cc.get("switch_alert_eur_year", 50)
+    start = max(date.fromisoformat(since), today - timedelta(days=59))
+    gaps, best_name, day = [], None, start
+    while day <= today:
+        mine = version_on(data.tariffs[supplier], day)
+        ranked = [v for v in deals_on(data.tariffs, day) if rankable(v) and v["supplier"] != supplier]
+        if not rankable(mine) or not ranked:
+            return None
+        gaps.append(mine["structural_annual_eur"] - ranked[0]["structural_annual_eur"])
+        best_name = ranked[0]["supplier"]
+        day += timedelta(days=1)
+    if len(gaps) >= 60 and min(gaps) > threshold:
+        return {"current": supplier, "cheaper": best_name, "saving_eur_year": round(gaps[-1], 2), "days": len(gaps)}
+    return None
+
+
+def help_wanted(data, today):
+    """Suppliers the agent can't complete (forms, bot blocks): the owner can add them in ~2 minutes each."""
+    items = []
+    for s in data.cfg["suppliers"]:
+        current = version_on(data.tariffs.get(s, []), today)
+        if current is not None and current["complete"]:
+            continue
+        urls = data.sources.get("energy", {}).get(s, [])
+        own = [u for u in urls if not any(x in u for x in ("keuze.nl", "selectra", "independer", "overstappen"))]
+        items.append({"supplier": s, "missing": "price and fixed charge" if current is None else "fixed charge",
+                      "url": (own or urls or [None])[0]})
+    return {"items": items, "edit_url": f"{REPO_URL}/edit/main/data/manual.csv"}
+
+
+def ops(data, today, scored):
+    cfg = data.cfg
+    checked = last_checked(data.tariffs, data.checks)
+    current = {s: version_on(data.tariffs.get(s, []), today) for s in cfg["suppliers"]}
+    ages = [(today - checked[s]).days for s in cfg["suppliers"] if s in checked]
+    return {
+        "suppliers_total": len(cfg["suppliers"]),
+        "complete": sum(rankable(v) for v in current.values()),
+        "trusted_complete": sum(trusted(v) for v in current.values() if v),
+        "max_days_since_check": max(ages) if ages else None,
+        "never_checked": sum(s not in checked for s in cfg["suppliers"]),
+        "runs": data.runs[-7:],
+        "forecast_accuracy": scored,
+    }
+
+
+def build(data, today, market=None):
     cfg = data.cfg
     start = date.fromisoformat(cfg["comparison"]["tracking_start"])
     history = daily_series(data.tariffs, start, today, cfg)
@@ -448,6 +750,21 @@ def build(data, today):
     ranking = deals_on(data.tariffs, today)
     periods = period_ranking(data.tariffs, start, today)
     checked = last_checked(data.tariffs, data.checks)
+
+    wholesale = forecast.Wholesale(market, today)
+    fy_start = first_year_start(cfg, today)
+    variable_rows = variable_forecasts(data, today, wholesale, fy_start)
+    options = contract_options(data, today, wholesale, fy_start)
+    best = best_by_type(variable_rows, options)
+    upcoming = announced(data.tariffs, today)
+    next_change = upcoming[0]["valid_from"] if upcoming else None
+    next_ranking = None
+    if next_change:
+        nd = date.fromisoformat(next_change)
+        next_ranking = {"date": next_change, "ranking": [
+            {"supplier": v["supplier"], "kwh_price": v["kwh_price"], "structural_annual_eur": v["structural_annual_eur"]}
+            for v in deals_on(data.tariffs, nd) if rankable(v)][:5]}
+    scored = forecast.score(data.forecast_log, data.tariffs, today)
 
     budget = None
     grid = data.fixed_costs.get("grid_costs_eur_year")
@@ -472,19 +789,34 @@ def build(data, today):
     if today_row and today_row["status"] == "partial":
         warnings.append(f"Only {today_row['n_suppliers']} suppliers have a complete price today; "
                         "today doesn't count towards the averages.")
+    if market is None:
+        warnings.append("Wholesale market data couldn't be loaded; forecasts assume flat prices.")
 
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "today_date": today.isoformat(),
+        "site_url": SITE_URL,
         "household": cfg["household"],
         "comparison": cfg["comparison"],
         "internet_config": {k: cfg["internet"][k] for k in ("min_download_mbps", "address_networks")},
         "today": today_row,
-        "ranking": [{**version_json(v), "rankable": rankable(v),
+        "ranking": [{**version_json(v), "rankable": rankable(v), "trusted": trusted(v),
                      "last_checked": checked[v["supplier"]].isoformat() if v["supplier"] in checked else None}
                     for v in ranking],
         "history": history,
         "periods": periods,
+        "announced": upcoming,
+        "next_ranking": next_ranking,
+        "calendar": sorted((e for e in data.calendar if e.get("date", "") >= today.isoformat()),
+                           key=lambda e: e["date"]),
+        "events": data.events[:12],
+        "market": market,
+        "forecast": {"first_year_from": fy_start.isoformat(), "variable": variable_rows},
+        "contracts": {"options": options, "best": best},
+        "decision": decision(cfg, today, variable_rows, best, market) | {"first_year_from": fy_start.isoformat()},
+        "switch_alert": switch_alert(data, today),
+        "help_wanted": help_wanted(data, today),
+        "ops": ops(data, today, scored),
         "fixed_costs": data.fixed_costs,
         "water": data.water,
         "budget": budget,
@@ -495,11 +827,11 @@ def build(data, today):
 
 
 def todo(data, today):
-    """What today's research run still has to do."""
+    """What today's research run still has to do, most important first."""
     cfg = data.cfg
     items = []
     checked = last_checked(data.tariffs, data.checks)
-    month_start = today.day <= 3  # variable tariffs usually change on the 1st
+    month_start_window = today.day <= 3  # variable tariffs usually change on the 1st
     for s in cfg["suppliers"]:
         current = version_on(data.tariffs.get(s, []), today)
         last = checked.get(s)
@@ -509,9 +841,11 @@ def todo(data, today):
             items.append(f"NO FIXED CHARGE: {s} (current version valid from {current['valid_from']})")
         elif current["source_type"] == "comparison":
             items.append(f"UPGRADE SOURCE: {s} is only sourced from a comparison site; find the official tariff sheet")
+        elif current["assumption"]:
+            items.append(f"RESOLVE ASSUMPTION: {s} ({current['assumption']})")
         if current is not None and (last is None or (today - last).days >= STALE_CHECK_DAYS
-                                    or (month_start and last < today)):
-            why = "start of the month" if month_start else f"last checked {last}"
+                                    or (month_start_window and last < today)):
+            why = "start of the month" if month_start_window else f"last checked {last}"
             items.append(f"CHECK FOR NEW VERSION: {s} ({why})")
 
     recent = {o["provider"].lower() for o in data.internet_rows
@@ -520,11 +854,47 @@ def todo(data, today):
     if len(recent) < 5 or (today.weekday() == 0 and not done_today):
         items.append(f"INTERNET CHECK DUE: {len(recent)} providers recorded in the last 7 days "
                      "(need >= 5, and a fresh check every Monday)")
+
+    week_ago = today - timedelta(days=7)
+    for t, need in (("fixed_1y", 4), ("fixed_3y", 3), ("dynamic", 4)):
+        fresh = {r["supplier"] for r in data.offer_rows
+                 if r["contract_type"] == t and r["found_at"][:10] >= week_ago.isoformat()}
+        if len(fresh) < need:
+            items.append(f"OFFERS CHECK DUE: {t} offers from {len(fresh)} suppliers in the last 7 days (need >= {need})")
+
     for name in ("fixed_costs.json", "water.json"):
         stamp = load_json(data.dir / name, {}).get("checked_at")
         if not stamp or (today - date.fromisoformat(stamp)).days > 31:
             items.append(f"MONTHLY CHECK DUE: {name} (checked_at {stamp or 'missing'})")
+    next_year = str(today.year + 1)
+    if today.month >= 10 and next_year not in cfg["taxes"]["energy_tax_eur_kwh_ex_vat"]:
+        items.append(f"TAX TABLE: add the {next_year} electricity energy tax (1st bracket, excl. VAT) to config.json "
+                     "taxes once published (Belastingplan), and the matching calendar.json event")
+
+    tracking = date.fromisoformat(cfg["comparison"]["tracking_start"])
+    for s in cfg["suppliers"]:
+        versions = data.tariffs.get(s, [])
+        if versions and min(v["valid_from"] for v in versions) >= tracking:
+            items.append(f"BACKFILL (low priority, only if time is left): {s} has no tariff history before "
+                         f"{tracking}; add earlier versions back to 2025-01 from its archive or news")
     return items
+
+
+def log_forecast(data, today, market):
+    """Append today's 1-3 month price forecasts to data/forecasts.csv (once per day)."""
+    path = data.dir / "forecasts.csv"
+    if any(r["made_on"] == today.isoformat() for r in data.forecast_log):
+        return 0
+    wholesale = forecast.Wholesale(market, today)
+    eligible = [s for s, vs in data.tariffs.items() if trusted(version_on(vs, today))]
+    rows = forecast.forecast_rows(data.tariffs, data.cfg, wholesale, today, eligible)
+    new_file = not path.exists()
+    with path.open("a", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=FORECAST_LOG_FIELDS, lineterminator="\n")
+        if new_file:
+            w.writeheader()
+        w.writerows(rows)
+    return len(rows)
 
 
 def main():
@@ -536,7 +906,10 @@ def main():
     mode.add_argument("--todo", action="store_true", help="print today's research checklist")
     mode.add_argument("--check", action="store_true", help="validate and print today's summary")
     mode.add_argument("--out", help="validate and build the site into this directory")
+    mode.add_argument("--log-forecast", action="store_true", help="append today's forecasts to data/forecasts.csv")
     ap.add_argument("--today", help="override today's date (YYYY-MM-DD), for tests")
+    ap.add_argument("--market-file", help="use this market JSON instead of calling the API")
+    ap.add_argument("--no-market", action="store_true", help="skip wholesale market data")
     args = ap.parse_args()
 
     cfg = json.loads(Path(args.config).read_text(encoding="utf-8"))
@@ -556,13 +929,28 @@ def main():
             print("- nothing left: every supplier is complete, official and checked; no checks are due")
         return 0
 
-    dash = build(data, today)
+    if args.no_market:
+        mkt = None
+    elif args.market_file:
+        mkt = json.loads(Path(args.market_file).read_text(encoding="utf-8"))
+    else:
+        mkt = market_data.load(today)
+
+    if args.log_forecast:
+        print(f"forecasts logged: {log_forecast(data, today, mkt)}")
+        return 0
+
+    dash = build(data, today, mkt)
     t = dash["today"]
     if t:
         print(f"{t['date']} [{t['status']}, {t['n_suppliers']} suppliers] best: {t['best_supplier']} "
               f"EUR {t['structural_annual_eur']}/yr | avg7 {t['avg7_eur']} avg30 {t['avg30_eur']} all {t['avg_all_eur']}")
     else:
         print(f"{today}: no supplier has a complete tariff yet.")
+    pick = dash["decision"]["pick"]
+    if pick:
+        print(f"forecast first year from {dash['decision']['first_year_from']}: {pick['supplier']} ({pick['contract_type']}) "
+              f"EUR {pick['base']:.0f} (range {pick['low']:.0f}-{pick['high']:.0f}, {pick['confidence']} confidence)")
     for v in dash["ranking"]:
         if v["flagged"]:
             print(f"FLAGGED (price out of range): {v['supplier']} {v['kwh_price']} EUR/kWh", file=sys.stderr)
@@ -583,7 +971,8 @@ def main():
             w = csv.DictWriter(f, fieldnames=DAILY_FIELDS, extrasaction="ignore", lineterminator="\n")
             w.writeheader()
             w.writerows(dash["history"])
-        (out / "dashboard.json").write_text(json.dumps(dash, indent=1, ensure_ascii=False), encoding="utf-8")
+        (out / "dashboard.json").write_text(json.dumps(dash, indent=1, ensure_ascii=False, default=str),
+                                            encoding="utf-8")
     return 0
 
 

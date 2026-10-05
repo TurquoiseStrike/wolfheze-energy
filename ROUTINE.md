@@ -22,12 +22,16 @@ python3 scripts/update.py --todo
 It prints today's work:
 - `NO TARIFF` / `NO FIXED CHARGE` — find the current tariff or its fixed charge.
 - `UPGRADE SOURCE` — the price is only from a comparison site; find the supplier's official tariff sheet.
+- `RESOLVE ASSUMPTION` — confirm what the row assumed (e.g. whether VAT is included) and add a corrected row.
 - `CHECK FOR NEW VERSION` — not checked for a week, or it's the start of a month.
-- `INTERNET CHECK DUE`
-- `MONTHLY CHECK DUE`
+- `OFFERS CHECK DUE` — fixed 1/3-year and dynamic offers (weekly).
+- `INTERNET CHECK DUE`, `MONTHLY CHECK DUE`, `TAX TABLE`
+- `BACKFILL` — low priority, only at the end (see below).
 
-**Work through every item.** You may only finish when `--todo` prints "nothing left", or each remaining item has had
-a real attempt: at least two different sources, **including the browser** (see below). List every remaining item
+**Work through every item except `BACKFILL` first.** You may only finish when `--todo` prints "nothing left", or each
+remaining non-backfill item has had a real attempt: at least two different sources, **including the browser** (see
+below). Suppliers that are listed as blocked in `sources.json` → `blocked` (e.g. bot protection) need only one quick
+retry per week. List every remaining item
 with what you tried in your final message. Ending after a few minutes with items left is a failed run. A run on a
 day that already has data continues the list. It never means "today is done".
 
@@ -38,8 +42,10 @@ day that already has data continues the list. It never means "today is done".
   doesn't say, use today's date and write "valid-from not published" in `notes`.
 - `found_at` is the real moment you read it: use the output of `date -Iseconds`. Never type a made-up time.
 - `source_type`: `official` = the supplier's own website, tariff sheet or press release; `comparison` = anything else.
-- Record prices exactly as published. Don't round. If something is ambiguous (VAT included? valid for new
-  customers?), say so in `notes` rather than guessing.
+- Record prices exactly as published. Don't round.
+- **If you had to assume anything** (VAT included? energy tax included? valid for new customers?), write that
+  assumption in the `assumption` column, not just in `notes`. Such rows are ranked, but not recommended until the
+  assumption is resolved (the checklist will ask for it).
 - Privacy: never write the household's street, postcode or house number anywhere in the repo. Before committing,
   run the privacy check from your prompt (see "Publish").
 
@@ -92,6 +98,36 @@ For every supplier you checked whose current version was already correct, append
 `date,supplier,result,notes` with `result` = `unchanged`, or `not_found` if you couldn't reach any current price.
 Use `new_version` when you added a tariff row.
 
+### Backfill (`BACKFILL` items, low priority)
+The forecast learns how fast each supplier passes wholesale price moves on to customers, which needs price history.
+Add earlier tariff versions (back to 2025-01) as normal rows with their real `valid_from`. Good sources: price
+history tables (Mega has one), archived tariff sheets (PDF file names often contain the date), and press releases
+about price changes. **Do backfill only after every other item, and stop when the run has taken ~25 minutes.**
+
+### Fixed and dynamic offers (`OFFERS CHECK DUE`)
+The household compares all three contract types, and fixed prices are also a market signal (they price in what
+suppliers expect). Record in `data/offers.csv`:
+- `fixed_1y` / `fixed_3y`: the supplier's standard 1-year / 3-year fixed electricity contract for new customers.
+  Price columns as in tariffs.csv.
+- `dynamic`: hourly-price contracts (Frank Energie, Tibber, ANWB Energie, Zonneplan, EasyEnergy, NextEnergy, and the
+  big suppliers' dynamic products). Put the supplier's markup per kWh **incl. VAT** in `dynamic_markup_eur_kwh`
+  (*inkoopvergoeding*/*opslag*), plus the fixed charge. Suppliers must be in `config.json` → `suppliers` or
+  `dynamic_suppliers`.
+
+Columns: `supplier, contract_type, product, valid_from, kwh_single, kwh_normal, kwh_dal, tax_basis,
+fixed_supply_eur_month/_day/_year, dynamic_markup_eur_kwh, welcome_bonus_eur, source_type, source_url, found_at,
+notes, assumption`. Add a row when an offer is new or its price changed. The newest row per supplier + type counts.
+
+### Market news (`data/events.csv`)
+Whenever you come across market news while researching (a supplier announcing a price change, a regulator or tax
+decision, a big wholesale move reported by the press), add a line: `date, scope (supplier/market/regulation),
+supplier, type (price_change/announcement/regulation/news), summary, url`. One line per event, with no duplicates.
+
+### Tax table (`TAX TABLE`)
+Once the next year's electricity energy tax is published (Belastingplan, usually from Prinsjesdag in September), add
+it to `config.json` → `taxes.energy_tax_eur_kwh_ex_vat` (1st bracket, **excl.** VAT, source: Belastingdienst or
+Rijksoverheid), and update the matching `data/calendar.json` entry's `impact` text.
+
 ## 2. Internet: when the checklist says `INTERNET CHECK DUE`
 `config.json` → `internet` has the household's needs (≥ 100 Mbit/s is plenty) and `address_networks`: the networks
 **confirmed** at the address. Currently **DELTA Fiber**, up to 8,000 Mbit/s, confirmed by the owner.
@@ -114,17 +150,24 @@ per year, energy tax per kWh incl. VAT, `checked_at`, `sources`) and `data/water
 Keep the existing keys. Copy values from official pages only. In January, make sure they're the new year's figures.
 
 ## 4. Publish
+Note the run's start time at the very beginning (`date -Iseconds`) and the checklist item count from the first
+`--todo`. Then, at the end:
 ```bash
-python3 scripts/update.py --check       # must print no VALIDATION ERROR; fix the raw rows if it does
-python3 scripts/update.py --todo        # anything left you haven't really tried? go back to it
+python3 scripts/update.py --check          # must print no VALIDATION ERROR; fix the raw rows if it does
+python3 scripts/update.py --todo           # anything left you haven't really tried? go back to it
+python3 scripts/update.py --log-forecast   # logs today's 1-3 month price forecasts (scored later)
+# append one line to data/runs.csv:
+#   date,started_at,finished_at,todo_before,todo_after,new_versions,notes
 python3 scripts/privacy_check.py --patterns "<the patterns from your prompt>"   # must print "clean"
 git add data sources.json config.json
 git commit -m "research: <date>: <what changed, e.g. 2 new versions, 3 fixed charges, internet>"
 git push origin HEAD:main
 ```
-If the push is rejected, `git pull --rebase origin main` and push again. Only commit files in `data/`,
-`sources.json` and (for a new supplier) `config.json`. Never commit build output.
+If the push is rejected, `git pull --rebase origin main` and push again. Only commit `data/`, `sources.json` and
+`config.json` (new supplier or tax table). Never commit build output.
 
-## 5. Final message
-5–10 lines: what changed (new versions, fixed charges found, sources upgraded), today's best deal from `--check`,
-each checklist item still open with what you tried, and anything notable (e.g. announced price changes).
+## 5. Final message and notifications
+5–10 lines: what changed (new versions, fixed charges, sources upgraded, offers, events), today's best deal and the
+first-year forecast from `--check`, each checklist item still open with what you tried, and anything notable (e.g.
+announced price changes). **Always end the final message, and any push notification, with the dashboard link:
+https://turquoisestrike.github.io/wolfheze-energy/**

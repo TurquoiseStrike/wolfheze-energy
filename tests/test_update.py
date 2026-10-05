@@ -12,17 +12,30 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import email_digest  # noqa: E402
+import forecast  # noqa: E402
 import privacy_check  # noqa: E402
 import update  # noqa: E402
 
 SUPPLIERS = ["A", "B", "C", "D", "E", "F", "G", "H"]
 CFG = {
-    "household": {"location": "Test", "annual_kwh": 3500, "dual_tariff_normal_share": 0.6, "annual_water_m3": 90},
+    "household": {"location": "Test", "annual_kwh": 3500, "dual_tariff_normal_share": 0.6, "annual_water_m3": 90,
+                  "monthly_profile": [1 / 12] * 12, "move_in": "2026-12-01"},
     "internet": {"min_download_mbps": 100, "address_networks": []},
     "comparison": {"tracking_start": "2026-10-01", "min_suppliers_for_full_day": 5,
                    "kwh_price_sane_min": 0.15, "kwh_price_sane_max": 0.45},
+    "decisions": [{"what": "Sign", "by": "2026-11-15"}],
+    "current_contract": {"supplier": None, "since": None, "switch_alert_eur_year": 50},
+    "taxes": {"vat": 0.21, "energy_tax_eur_kwh_ex_vat": {"2026": 0.09}},
     "suppliers": SUPPLIERS,
+    "dynamic_suppliers": ["Dyn"],
 }
+
+
+def flat_market(level=0.10, months=("2026-06", "2026-07", "2026-08", "2026-09"), vol=0.1, monthly=None):
+    """A market dict like market.load() returns, with a flat (or given) monthly wholesale price."""
+    monthly = monthly or {m: level for m in months}
+    return {"power": {"monthly": [{"month": m, "avg": v} for m, v in monthly.items()],
+                      "avg_30d": level, "monthly_volatility": vol, "change_30d": 0.0}}
 
 
 def tariff(supplier, valid_from, kwh="0.25", fixed="6", found_at=None, **kw):
@@ -233,6 +246,169 @@ class Build(Base):
             self.assertTrue((out / name).exists(), name)
 
 
+class ManualAndAssumptions(Base):
+    def test_manual_entry_completes_a_supplier(self):
+        self.tariffs([tariff("A", "2026-10-01", fixed="")])
+        write_csv(self.data / "manual.csv", update.MANUAL_FIELDS, [{
+            "supplier": "A", "valid_from": "2026-10-01", "kwh_single": "0.25", "kwh_normal": "", "kwh_dal": "",
+            "fixed_supply_eur_month": "8", "source_url": "https://a.nl/tarieven", "entered_on": "2026-10-05", "notes": ""}])
+        v = self.load().tariffs["A"][0]
+        self.assertEqual(v["source_type"], "manual")
+        self.assertEqual(v["fixed_supply_eur_month"], 8.0)
+
+    def test_manual_errors_point_to_manual_csv(self):
+        self.tariffs([])
+        write_csv(self.data / "manual.csv", update.MANUAL_FIELDS, [{
+            "supplier": "Typo", "valid_from": "2026-10-01", "kwh_single": "0.25", "kwh_normal": "", "kwh_dal": "",
+            "fixed_supply_eur_month": "8", "source_url": "https://a.nl", "entered_on": "2026-10-05", "notes": ""}])
+        with self.assertRaisesRegex(update.RowError, "manual.csv row 2"):
+            self.load()
+
+    def test_assumption_ranks_but_is_not_recommended(self):
+        self.tariffs([tariff("A", "2026-10-01", "0.20", assumption="VAT unclear"), tariff("B", "2026-10-01", "0.25")])
+        dash = update.build(self.load(), date(2026, 10, 5))
+        self.assertEqual(dash["today"]["best_supplier"], "A")
+        self.assertEqual(dash["advice"]["energy"]["supplier"], "B")
+        self.assertEqual(dash["advice"]["energy"]["skipped_assumptions"], ["A"])
+        self.assertIn("RESOLVE ASSUMPTION: A", "\n".join(update.todo(self.load(), date(2026, 10, 5))))
+
+
+class Announced(Base):
+    def test_future_version_is_announced_with_next_ranking(self):
+        self.tariffs([tariff("A", "2026-10-01", "0.20"), tariff("A", "2026-11-01", "0.30"),
+                      tariff("B", "2026-10-01", "0.25")])
+        dash = update.build(self.load(), date(2026, 10, 5))
+        self.assertEqual(dash["today"]["best_supplier"], "A")  # the announced price isn't active yet
+        a = dash["announced"][0]
+        self.assertEqual((a["supplier"], a["valid_from"]), ("A", "2026-11-01"))
+        self.assertAlmostEqual(a["change_pct"], 0.5)
+        self.assertEqual(dash["next_ranking"]["ranking"][0]["supplier"], "B")
+
+
+class Forecasts(unittest.TestCase):
+    def versions(self, *pairs):
+        return [{"valid_from": date.fromisoformat(d), "kwh_price": p} for d, p in pairs]
+
+    def test_flat_market_keeps_the_price(self):
+        w = forecast.Wholesale(flat_market(), date(2026, 10, 5))
+        path = forecast.variable_path(self.versions(("2026-10-01", 0.30)), CFG, w, date(2026, 12, 1), 12)
+        self.assertTrue(all(abs(p - 0.30) < 1e-9 for p in path))
+
+    def test_wholesale_rise_is_passed_on_after_the_lag(self):
+        # Wholesale was 0.10 until Sept and is 0.15 now: with a 2-month lag the rise reaches December.
+        mkt = flat_market(level=0.15, monthly={"2026-07": 0.10, "2026-08": 0.10, "2026-09": 0.10})
+        w = forecast.Wholesale(mkt, date(2026, 10, 5))
+        path = forecast.variable_path(self.versions(("2026-10-01", 0.30)), CFG, w, date(2026, 11, 1), 2, lag=2)
+        self.assertAlmostEqual(path[0], 0.30)  # Nov follows Sept wholesale: unchanged
+        self.assertAlmostEqual(path[1], 0.30 + 0.05 * 1.21)  # Dec follows Oct: +0.05 ex VAT
+
+    def test_announced_version_anchors_the_path(self):
+        w = forecast.Wholesale(flat_market(), date(2026, 10, 5))
+        path = forecast.variable_path(self.versions(("2026-10-01", 0.30), ("2026-12-01", 0.35)), CFG, w,
+                                      date(2026, 11, 1), 3)
+        self.assertAlmostEqual(path[0], 0.30)
+        self.assertAlmostEqual(path[1], 0.35)
+
+    def test_first_year_band_and_monthly_profile(self):
+        cfg = json.loads(json.dumps(CFG))
+        cfg["household"]["monthly_profile"] = [0.5] + [0.5 / 11] * 11
+        w = forecast.Wholesale(flat_market(), date(2026, 10, 5))
+        fy = forecast.first_year(self.versions(("2026-10-01", 0.30)), cfg, w, date(2026, 12, 1), 6.0)
+        self.assertAlmostEqual(fy["base"], round(3500 * 0.30 + 72, 2))
+        self.assertLess(fy["low"], fy["base"])
+        self.assertGreater(fy["high"], fy["base"])
+
+    def test_pass_through_finds_the_lag(self):
+        # Supplier supply price = wholesale two months earlier + 0.03 margin. The wholesale series must be
+        # irregular: with a straight-line trend every lag fits equally well and the lag can't be identified.
+        zigzag = [0.08, 0.12, 0.07, 0.15, 0.09, 0.14, 0.10, 0.16, 0.11]
+        w_by_month = {f"2026-{m:02d}": zigzag[m - 1] for m in range(1, 10)}
+        w = forecast.Wholesale(flat_market(level=0.15, monthly=w_by_month), date(2026, 10, 5))
+        versions = []
+        for m in range(3, 10):
+            supply = w_by_month[f"2026-{m - 2:02d}"] + 0.03
+            versions.append({"valid_from": date(2026, m, 1), "kwh_price": (supply + 0.09) * 1.21})
+        pt = forecast.pass_through(versions, CFG, w)
+        self.assertEqual(pt["lag_months"], 2)
+        self.assertAlmostEqual(pt["margin"], 0.03, places=4)
+
+    def test_dynamic_path(self):
+        w = forecast.Wholesale(flat_market(level=0.10), date(2026, 10, 5))
+        path = forecast.dynamic_path(0.02, CFG, w, date(2026, 12, 1), 1)
+        self.assertAlmostEqual(path[0], (0.10 + 0.09) * 1.21 + 0.02)
+
+    def test_score(self):
+        tariffs = {"A": [{"valid_from": date(2026, 11, 1), "kwh_price": 0.30}]}
+        rows = [{"made_on": "2026-10-05", "supplier": "A", "target_month": "2026-11", "kwh_base": "0.33",
+                 "kwh_low": "0.25", "kwh_high": "0.35"},
+                {"made_on": "2026-10-05", "supplier": "A", "target_month": "2026-12", "kwh_base": "0.30",
+                 "kwh_low": "0.29", "kwh_high": "0.31"}]
+        s = forecast.score(rows, tariffs, date(2026, 11, 2))
+        self.assertEqual(s, [{"horizon_months": 1, "n": 1, "mape": 0.1, "band_hit_rate": 1.0}])  # Dec not yet due
+
+
+class OffersAndDecision(Base):
+    def offers(self, rows):
+        write_csv(self.data / "offers.csv", update.OFFER_FIELDS, rows)
+
+    def offer(self, supplier, contract_type, **kw):
+        r = {f: "" for f in update.OFFER_FIELDS}
+        r.update(supplier=supplier, contract_type=contract_type, product="x", valid_from="2026-10-01",
+                 tax_basis="incl", fixed_supply_eur_month="6", welcome_bonus_eur="0", source_type="official",
+                 source_url="https://example.com", found_at="2026-10-05T08:00:00+02:00")
+        r.update(kw)
+        return r
+
+    def test_fixed_offer_beats_variable_and_is_picked(self):
+        self.tariffs([tariff(s, "2026-10-01", "0.30") for s in "ABCDEF"])
+        self.offers([self.offer("A", "fixed_1y", kwh_single="0.25"),
+                     self.offer("Dyn", "dynamic", dynamic_markup_eur_kwh="0.02")])
+        dash = update.build(self.load(), date(2026, 10, 5), flat_market())
+        best = dash["contracts"]["best"]
+        self.assertAlmostEqual(best["fixed_1y"]["base"], 3500 * 0.25 + 72)
+        self.assertIsNotNone(best["dynamic"]["base"])
+        self.assertEqual(dash["decision"]["pick"]["contract_type"], "fixed_1y")
+
+    def test_offer_validation(self):
+        self.tariffs([])
+        self.offers([self.offer("Nobody", "fixed_1y", kwh_single="0.25")])
+        with self.assertRaisesRegex(update.RowError, "unknown supplier"):
+            self.load()
+        self.offers([self.offer("A", "fixed_9y", kwh_single="0.25")])
+        with self.assertRaisesRegex(update.RowError, "contract_type"):
+            self.load()
+
+    def test_switch_alert_after_two_months(self):
+        self.tariffs([tariff("A", "2026-10-01", "0.35"), tariff("B", "2026-10-01", "0.25")])
+        cfg = json.loads(json.dumps(CFG))
+        cfg["current_contract"] = {"supplier": "A", "since": "2026-10-01", "switch_alert_eur_year": 50}
+        data = update.Data(self.data, cfg)
+        self.assertIsNone(update.switch_alert(data, date(2026, 11, 15)))  # only 46 days
+        alert = update.switch_alert(data, date(2026, 12, 15))
+        self.assertEqual(alert["cheaper"], "B")
+
+    def test_log_forecast_once_per_day(self):
+        self.tariffs([tariff("A", "2026-10-01", "0.30")])
+        data = self.load()
+        self.assertEqual(update.log_forecast(data, date(2026, 10, 5), flat_market()), 3)
+        self.assertEqual(update.log_forecast(self.load(), date(2026, 10, 5), flat_market()), 0)
+
+    def test_todo_has_offers_tax_and_backfill(self):
+        self.tariffs([tariff("A", "2026-10-01")])
+        text = "\n".join(update.todo(self.load(), date(2026, 10, 5)))
+        self.assertIn("OFFERS CHECK DUE: fixed_1y", text)
+        self.assertIn("TAX TABLE: add the 2027", text)
+        self.assertIn("BACKFILL (low priority", text)
+
+    def test_help_wanted_lists_incomplete_suppliers(self):
+        self.tariffs([tariff("A", "2026-10-01", fixed="")])
+        h = update.help_wanted(self.load(), date(2026, 10, 5))
+        missing = {i["supplier"]: i["missing"] for i in h["items"]}
+        self.assertEqual(missing["A"], "fixed charge")
+        self.assertEqual(missing["B"], "price and fixed charge")
+        self.assertTrue(h["edit_url"].endswith("/edit/main/data/manual.csv"))
+
+
 class Email(unittest.TestCase):
     def dash(self, today=900.0, yesterday=950.0):
         day = lambda d, v: {"date": d, "status": "full", "n_suppliers": 5, "best_supplier": "A",  # noqa: E731
@@ -252,6 +428,26 @@ class Email(unittest.TestCase):
         self.assertIn("2.7% cheaper than the 30-day average", text)
         self.assertIn("W1", text)
         self.assertIn("https://site", text)
+
+    def test_brevo_request(self):
+        req = email_digest.brevo_request("KEY", "from@x.nl", ["a@x.nl", "b@y.nl"], "Subj", ["Line", "", "Dashboard: u"], "u")
+        body = json.loads(req.data)
+        self.assertEqual(req.full_url, email_digest.BREVO_URL)
+        self.assertEqual(req.get_header("Api-key"), "KEY")
+        self.assertEqual(body["sender"]["email"], "from@x.nl")
+        self.assertEqual([t["email"] for t in body["to"]], ["a@x.nl", "b@y.nl"])
+        self.assertIn("Open the dashboard", body["htmlContent"])
+
+    def test_not_configured_exits_cleanly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dash = Path(tmp) / "dashboard.json"
+            dash.write_text(json.dumps(self.dash()))
+            env = {k: v for k, v in __import__("os").environ.items()
+                   if k not in ("BREVO_API_KEY", "EMAIL_FROM", "EMAIL_TO")}
+            res = subprocess.run([sys.executable, str(ROOT / "scripts" / "email_digest.py"), "--dashboard", str(dash),
+                                  "--site-url", "u"], capture_output=True, text=True, env=env)
+            self.assertEqual(res.returncode, 0, res.stderr)
+            self.assertIn("not configured", res.stdout)
 
     def test_alert_when_build_failed(self):
         subject, lines = email_digest.alert("https://run", "https://site")

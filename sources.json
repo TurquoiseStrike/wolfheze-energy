@@ -57,5 +57,10 @@
     "comparison": [
       "https://www.providers.nl/internet/alleen-internet/"
     ]
+  },
+  "blocked": {
+    "Essent": "consumer tariff pages return HTTP 403 (CloudFront) to automated browsers (seen 2026-10-04)",
+    "Energiedirect": "HTTP 403 (CloudFront) to automated browsers (seen 2026-10-04)",
+    "Vattenfall": "prices only behind a postcode form that the browser could not complete (2026-10-04/05)"
   }
 }

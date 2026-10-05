@@ -1,8 +1,8 @@
 name: Build, publish and email
 
 # The research agent (a Claude routine, ~05:00 UTC) only pushes raw data to data/.
-# This workflow tests it, checks it for private data, builds the dashboard and publishes it.
-# The scheduled run also sends the daily email, after the research run has had time to finish.
+# This workflow tests it, checks it for private data, builds the dashboard (fetching wholesale market data),
+# smoke-tests the page in a real browser and publishes it. The scheduled run also sends the daily email.
 
 on:
   push:
@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -41,6 +41,11 @@ jobs:
         run: python scripts/privacy_check.py
       - name: Build site
         run: python scripts/update.py --out _site
+      - name: Smoke test in a browser
+        run: |
+          python -m pip install --quiet playwright
+          python -m playwright install --with-deps chromium > /dev/null
+          python tests/smoke_site.py _site
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
@@ -51,7 +56,7 @@ jobs:
 
   deploy:
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -62,7 +67,7 @@ jobs:
   email:
     needs: [build, deploy]
     if: always() && (github.event_name == 'schedule' || inputs.send_email)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -75,8 +80,8 @@ jobs:
           path: _site
       - name: Send digest
         env:
-          GMAIL_USER: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           BUILD_OK: ${{ needs.build.result == 'success' && needs.deploy.result == 'success' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

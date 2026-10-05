@@ -95,6 +95,24 @@ tr.best td { font-weight: 600; }
 .tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .tabs button { font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 99px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); cursor: pointer; }
 .tabs button[aria-pressed="true"] { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.decision-card { border-color: var(--series-1); border-width: 2px; }
+.pick-line { font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+.pick-range { font-size: 15px; color: var(--ink-2); margin-top: 2px; }
+.conf { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--border); margin-left: 6px; vertical-align: middle; font-weight: 500; }
+.cols { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); margin-top: 12px; }
+.cols h3 { margin: 0 0 4px; font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.cols ul { margin: 0; padding-left: 18px; }
+.cols li { margin: 2px 0; }
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); margin-bottom: 14px; }
+.tile { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.tile .k { font-size: 12px; color: var(--ink-2); }
+.tile .v { font-size: 20px; font-weight: 650; margin-top: 2px; }
+.tile .d { font-size: 12px; color: var(--ink-2); }
+.up { color: var(--bad); } .down { color: var(--good); }
+.rangebar { position: relative; height: 14px; min-width: 120px; }
+.rangebar .r { position: absolute; top: 5px; height: 4px; border-radius: 2px; background: var(--series-1); opacity: .35; }
+.rangebar .b { position: absolute; top: 2px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--series-1); border: 2px solid var(--surface); }
+td.notes details summary { margin: 0; font-size: 12px; }
 details summary { cursor: pointer; color: var(--ink-2); margin-top: 12px; }
 .empty { color: var(--ink-2); padding: 8px 0; }
 .banner { margin-top: 16px; padding: 10px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); }
@@ -110,6 +128,11 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
   <div id="banner" class="banner" hidden></div>
 
   <div class="grid">
+    <section class="card decision-card" aria-labelledby="h-decision">
+      <h2 id="h-decision">Decision</h2>
+      <div id="decision"><div class="empty">The recommendation appears once prices and market data are in.</div></div>
+    </section>
+
     <section class="card" aria-labelledby="h-advice">
       <h2 id="h-advice">Advice</h2>
       <div id="advice"><div class="empty">Advice appears after the first daily run.</div></div>
@@ -122,6 +145,28 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
     <section class="card span-5" aria-labelledby="h-vs">
       <h2 id="h-vs">Today vs 30-day average</h2>
       <div id="vs"><div class="empty">Needs at least one full day of data.</div></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-upcoming">
+      <h2 id="h-upcoming">What's coming</h2>
+      <div id="upcoming"><div class="empty">No announced changes.</div></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-market">
+      <h2 id="h-market">Wholesale market</h2>
+      <p class="sub" style="margin-top:0">Variable tariffs follow the wholesale price with a delay of 1–3 months, so this is
+        where tariffs are heading. Wholesale prices exclude taxes, VAT and supplier margin.</p>
+      <div id="market"><div class="empty">Market data couldn't be loaded for this build.</div></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-forecast">
+      <h2 id="h-forecast">Forecast: first year in the new house</h2>
+      <div id="forecast"><div class="empty">—</div></div>
+    </section>
+
+    <section class="card" aria-labelledby="h-options">
+      <h2 id="h-options">Variable, fixed or dynamic?</h2>
+      <div id="options"><div class="empty">Fixed and dynamic offers are collected weekly by the research agent.</div></div>
     </section>
 
     <section class="card" aria-labelledby="h-chart">
@@ -156,6 +201,15 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; }
       <h2 id="h-net">Internet at the new address</h2>
       <div id="internet"><div class="empty">Checked every Monday.</div></div>
     </section>
+
+    <section class="card span-6" aria-labelledby="h-help">
+      <h2 id="h-help">Help wanted</h2>
+      <div id="help"><div class="empty">—</div></div>
+    </section>
+    <section class="card span-6" aria-labelledby="h-ops">
+      <h2 id="h-ops">Operations</h2>
+      <div id="ops"><div class="empty">—</div></div>
+    </section>
   </div>
 
   <footer id="footer">Prices are collected daily by an AI research agent from supplier and comparison websites. Every price links to its source. Check before signing.</footer>
@@ -176,7 +230,7 @@ function el(tag, props, ...kids) {
   for (const [k, v] of Object.entries(props || {})) {
     if (k === "class") n.className = v; else if (k === "style") n.style.cssText = v; else n.setAttribute(k, v);
   }
-  for (const k of kids.flat()) if (k != null) n.append(k instanceof Node ? k : String(k));
+  for (const k of kids.flat(Infinity)) if (k != null) n.append(k instanceof Node ? k : String(k));
   return n;
 }
 function svg(tag, attrs) {
@@ -352,7 +406,8 @@ function renderTop(d) {
     el("td", { class: "num" }, money(eur, x.year1_annual_eur)),
     el("td", { class: "num" }, shortDate(x.valid_from)),
     el("td", { class: "num" }, shortDate(x.last_checked)),
-    el("td", { class: "muted" }, note(x))));
+    el("td", { class: "muted notes" }, x.assumption ? el("span", { class: "badge", title: x.assumption }, "⚠ assumption") : null,
+      note(x).length > 40 ? el("details", {}, el("summary", {}, "notes"), note(x)) : note(x))));
   fill("top", table(["#", "Supplier", "€/kWh", "Fixed / mo", "Annual", "Bonus", "Year 1", "Valid from", "Checked", "Notes"], rows, [2, 3, 4, 5, 6, 7, 8]),
     el("p", { class: "muted", style: "margin:8px 0 0" }, "Ranked by annual cost without bonuses. Year 1 subtracts the welcome bonus. " +
       "Prices marked “comparison site” aren't confirmed by the supplier yet."));
@@ -487,6 +542,200 @@ function renderAdvice(d) {
   fill("advice", el("div", { class: "advice" }, blocks));
 }
 
+const LABEL = { variable: "variable", fixed_1y: "fixed 1-year", fixed_3y: "fixed 3-year", dynamic: "dynamic" };
+const pctFmt = v => v == null ? "—" : `${v > 0 ? "+" : ""}${(v * 100).toFixed(0)}%`;
+const trend = v => v == null ? null : el("span", { class: v > 0.005 ? "up" : v < -0.005 ? "down" : "" },
+  v > 0.005 ? "▲ " : v < -0.005 ? "▼ " : "● ", pctFmt(v));
+
+function renderDecision(d) {
+  const dec = d.decision || {};
+  const p = dec.pick;
+  const deadlines = (dec.deadlines || []).map(x => el("li", {}, `${x.what}: by ${shortDate(x.by)} `,
+    el("span", { class: x.days_left < 0 ? "muted" : x.days_left <= 14 ? "warn" : "muted" },
+      x.days_left < 0 ? "(passed)" : `(${x.days_left} days)`)));
+  if (!p) {
+    if (deadlines.length) fill("decision", el("div", { class: "cols" }, el("div", {}, el("h3", {}, "Deadlines"), el("ul", {}, deadlines))));
+    return;
+  }
+  const range = p.low === p.high ? "fixed price, no range" : `range ${eur.format(p.low)} – ${eur.format(p.high)}`;
+  fill("decision",
+    el("div", { class: "pick-line" }, `${p.supplier} · ${LABEL[p.contract_type]}`,
+      el("span", { class: "conf", title: "Based on the forecast range and how many suppliers are confirmed" }, `${p.confidence} confidence`)),
+    el("div", { class: "pick-range" }, `Expected first year from ${shortDate(dec.first_year_from)}: `, el("b", {}, eur.format(p.base)), ` (${range})`),
+    el("div", { class: "cols" },
+      dec.reasons.length ? el("div", {}, el("h3", {}, "Why"), el("ul", {}, dec.reasons.map(r => el("li", {}, r)))) : null,
+      dec.watch.length ? el("div", {}, el("h3", {}, "What would change this"), el("ul", {}, dec.watch.map(r => el("li", {}, r)))) : null,
+      deadlines.length ? el("div", {}, el("h3", {}, "Deadlines"), el("ul", {}, deadlines)) : null),
+    d.switch_alert ? el("p", { class: "warn" }, `Switch alert: ${d.switch_alert.cheaper} has been at least ${eur.format(d.switch_alert.saving_eur_year)}/year cheaper than ${d.switch_alert.current} for ${d.switch_alert.days} days.`) : null);
+}
+
+function renderUpcoming(d) {
+  const items = [
+    ...(d.announced || []).map(a => ({ date: a.valid_from, title: `${a.supplier}: new variable price ${kwhFmt.format(a.kwh_price)}/kWh`,
+      detail: a.change_pct != null ? `${pctFmt(a.change_pct)} vs now` : "", url: a.source_url, kind: "announced" })),
+    ...(d.calendar || []).map(c => ({ date: c.date, title: c.title, detail: c.impact, url: c.source, kind: c.scope })),
+  ].sort((a, b) => a.date.localeCompare(b.date));
+  const events = (d.events || []).slice(0, 6);
+  if (!items.length && !events.length) return;
+  const nr = d.next_ranking;
+  fill("upcoming",
+    items.length ? table(["Date", "What", "Impact"], items.map(i => el("tr", {},
+      el("td", { class: "num" }, shortDate(i.date)),
+      el("td", {}, i.url ? link(i.url, i.title) : i.title, " ", el("span", { class: "badge" }, i.kind)),
+      el("td", { class: "muted" }, i.detail || "—"))), [0]) : null,
+    nr && nr.ranking.length ? el("p", { class: "sub" }, `Ranking on ${shortDate(nr.date)} with announced prices: `,
+      nr.ranking.slice(0, 3).map((r, i) => [i ? ", " : "", el("b", {}, r.supplier), ` ${eur.format(r.structural_annual_eur)}`]), ".") : null,
+    events.length ? el("details", {}, el("summary", {}, `Recent market news (${events.length})`),
+      el("ul", {}, events.map(e => el("li", {}, `${shortDate(e.date)} · `, e.url ? link(e.url, e.summary) : e.summary))))
+      : null);
+}
+
+function lineChart(box, series, yFmt, label) {
+  const W = Math.max(320, box.clientWidth || 900), H = W < 520 ? 220 : 260;
+  const m = { l: 56, r: 16, t: 12, b: 28 }, iw = W - m.l - m.r, ih = H - m.t - m.b;
+  const all = series.flatMap(s => s.points);
+  const xs = all.map(p => p.x.getTime()), x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const x = t => m.l + (x1 === x0 ? iw / 2 : (t - x0) / (x1 - x0) * iw);
+  let hi = Math.max(...all.map(p => p.y)) * 1.1;
+  const step = niceStep(hi / 4); hi = Math.ceil(hi / step) * step;
+  const y = v => m.t + ih - v / hi * ih;
+  const s = svg("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": label });
+  for (let v = 0; v <= hi + 1e-9; v += step) {
+    s.append(svg("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: v === 0 ? "var(--axis)" : "var(--grid)" }));
+    const t = svg("text", { x: m.l - 8, y: y(v) + 4, "text-anchor": "end" }); t.textContent = yFmt(v); s.append(t);
+  }
+  const ticks = W < 520 ? 4 : 7;
+  for (let i = 0; i < ticks; i++) {
+    const tt = x0 + (x1 - x0) * i / (ticks - 1);
+    const t = svg("text", { x: x(tt), y: H - 8, "text-anchor": i === 0 ? "start" : i === ticks - 1 ? "end" : "middle" });
+    t.textContent = new Intl.DateTimeFormat("en-GB", { month: "short", year: "2-digit" }).format(new Date(tt)); s.append(t);
+  }
+  for (const se of series) {
+    if (se.points.length > 1) s.append(svg("polyline", { points: se.points.map(p => `${x(p.x.getTime()).toFixed(1)},${y(p.y).toFixed(1)}`).join(" "),
+      fill: "none", stroke: se.color, "stroke-width": 2, "stroke-linejoin": "round" }));
+    else if (se.points.length) s.append(svg("circle", { cx: x(se.points[0].x.getTime()), cy: y(se.points[0].y), r: 4, fill: se.color }));
+  }
+  const cross = svg("line", { y1: m.t, y2: m.t + ih, stroke: "var(--axis)", visibility: "hidden" });
+  const hit = svg("rect", { x: m.l, y: m.t, width: iw, height: ih, fill: "transparent", tabindex: 0 });
+  s.append(cross, hit);
+  const tip = el("div", { class: "tip", hidden: "" });
+  const nearest = (pts, t) => pts.reduce((a, b) => Math.abs(b.x - t) < Math.abs(a.x - t) ? b : a);
+  const show = clientX => {
+    const r = s.getBoundingClientRect(), t = x0 + ((clientX - r.left) * W / r.width - m.l) / iw * (x1 - x0);
+    const ref = nearest(series[0].points, t);
+    cross.setAttribute("x1", x(ref.x.getTime())); cross.setAttribute("x2", x(ref.x.getTime())); cross.setAttribute("visibility", "visible");
+    tip.replaceChildren(el("div", { class: "d" }, new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" }).format(ref.x)),
+      ...series.map(se => { const p = se.points.length ? nearest(se.points, ref.x.getTime()) : null;
+        const same = p && Math.abs(p.x - ref.x) < 20 * 864e5;
+        return el("div", { class: "r" }, el("i", { style: `background:${se.color}` }), el("b", {}, same ? yFmt(p.y) : "—"), el("span", { class: "muted" }, se.name)); }));
+    tip.hidden = false;
+    const left = x(ref.x.getTime()) * r.width / W;
+    tip.style.left = (left + 200 > r.width ? left - 200 : left + 12) + "px"; tip.style.top = "8px";
+  };
+  hit.addEventListener("pointermove", e => show(e.clientX));
+  hit.addEventListener("pointerleave", () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); });
+  const legend = el("div", { class: "legend" }, series.map(se => el("span", {}, el("i", { class: "key-line", style: `border-color:${se.color}` }), se.name)));
+  return [legend, el("div", { class: "chart-wrap" }, s, tip)];
+}
+
+function renderMarket(d) {
+  const mk = d.market;
+  if (!mk || !mk.power) return;
+  const p = mk.power, g = mk.gas;
+  const tile = (k, v, sub) => el("div", { class: "tile" }, el("div", { class: "k" }, k), el("div", { class: "v" }, v), el("div", { class: "d" }, sub));
+  const monthDate = s => new Date(s + "-15T12:00:00");
+  const best = {};
+  for (const h of d.history) { const k = h.date.slice(0, 7); (best[k] ||= []).push(h.kwh_price); }
+  const tariff = Object.entries(best).map(([k, v]) => ({ x: monthDate(k), y: v.reduce((a, b) => a + b, 0) / v.length }));
+  const box = el("div");
+  fill("market",
+    el("div", { class: "tiles" },
+      tile("Power, 30-day average", kwhFmt.format(p.avg_30d) + "/kWh", el("span", {}, trend(p.change_30d), " vs previous 30 days")),
+      tile("Power vs a year ago", pctFmt(p.change_vs_year_ago), el("span", {}, "90 days: ", trend(p.change_90d))),
+      g ? tile("Gas, 30-day average", eur2.format(g.avg_30d) + "/m³", el("span", {}, trend(g.change_30d), " vs previous 30 days")) : null,
+      tile("Monthly volatility", p.monthly_volatility != null ? `±${(p.monthly_volatility * 100).toFixed(0)}%` : "—", "typical month-to-month move")),
+    box,
+    el("p", { class: "muted", style: "margin:8px 0 0" }, `Source: ${mk.source}. The gap between the lines is energy tax, VAT and supplier margin.`));
+  box.replaceChildren(...lineChart(box, [
+    { name: "Wholesale power (monthly avg)", color: "var(--series-1)", points: p.monthly.map(r => ({ x: monthDate(r.month), y: r.avg })) },
+    { name: "Best variable tariff incl. tax", color: "var(--series-2)", points: tariff },
+  ], v => `€ ${v.toFixed(2).replace(".", ",")}`, "Wholesale power price and best variable tariff per month"));
+}
+
+function rangeBar(lo, base, hi, min, max) {
+  const pos = v => `${((v - min) / (max - min || 1) * 100).toFixed(1)}%`;
+  return el("div", { class: "rangebar", title: `${eur.format(lo)} – ${eur.format(hi)}` },
+    el("div", { class: "r", style: `left:${pos(lo)};width:calc(${pos(hi)} - ${pos(lo)})` }),
+    el("div", { class: "b", style: `left:${pos(base)}` }));
+}
+
+function renderForecast(d) {
+  const f = d.forecast;
+  if (!f || !f.variable.length) return;
+  const rows = f.variable;
+  const min = Math.min(...rows.map(r => r.low)), max = Math.max(...rows.map(r => r.high));
+  fill("forecast",
+    el("p", { class: "sub", style: "margin-top:0" }, `Expected supply cost for 12 months from ${shortDate(f.first_year_from)}, `,
+      `weighted by a heat pump's monthly use (~60% in Nov–Mar). Range = wholesale prices one typical move lower or higher.`),
+    table(["Supplier", "Today, annualised", "Expected first year", "Range", "", "Price delay"], rows.map((r, i) => el("tr", { class: i === 0 && r.trusted ? "best" : "" },
+      el("td", {}, r.supplier, " ", r.trusted ? null : el("span", { class: "badge cmp", title: r.assumption || "comparison site only" }, "unconfirmed")),
+      el("td", { class: "num" }, eur.format(r.today_annual_eur)),
+      el("td", { class: "num" }, el("b", {}, eur.format(r.base))),
+      el("td", { class: "num muted" }, `${eur.format(r.low)} – ${eur.format(r.high)}`),
+      el("td", {}, rangeBar(r.low, r.base, r.high, min, max)),
+      el("td", { class: "muted" }, r.pass_through ? `${r.pass_through.lag_months} mo (measured)` : "2 mo (default)"))), [1, 2, 3]),
+    el("p", { class: "muted", style: "margin:8px 0 0" }, "Forecasts are logged daily and scored once the month has passed; see Operations for accuracy."));
+}
+
+function renderOptions(d) {
+  const c = d.contracts;
+  if (!c || !c.options.length) return;
+  const v = c.best.variable;
+  const rows = [
+    ...(v ? [{ contract_type: "variable", supplier: v.supplier, price: "follows the market", fixed: null, base: v.base, low: v.low, high: v.high, url: null, last: null }] : []),
+    ...c.options.map(o => ({ ...o, price: o.contract_type === "dynamic" ? `spot + ${kwhFmt.format(o.dynamic_markup_eur_kwh)}` : kwhFmt.format(o.kwh_price), fixed: o.fixed_supply_eur_month, url: o.source_url, last: o.last_12_months })),
+  ];
+  fill("options",
+    table(["Type", "Supplier", "€/kWh", "Fixed / mo", "Expected first year", "Range", "Last 12 months"], rows.map(r => el("tr", { class: c.best[r.contract_type] && c.best[r.contract_type].supplier === r.supplier ? "best" : "" },
+      el("td", {}, LABEL[r.contract_type]),
+      el("td", {}, r.url ? link(r.url, r.supplier) : r.supplier, r.assumption ? el("span", { class: "badge", title: r.assumption }, " ⚠") : null),
+      el("td", { class: "num" }, r.price),
+      el("td", { class: "num" }, r.fixed == null ? "—" : eur2.format(r.fixed)),
+      el("td", { class: "num" }, r.base == null ? "—" : eur.format(r.base)),
+      el("td", { class: "num muted" }, r.base == null || r.low === r.high ? "—" : `${eur.format(r.low)} – ${eur.format(r.high)}`),
+      el("td", { class: "num muted" }, r.last == null ? "—" : eur.format(r.last)))), [2, 3, 4, 5, 6]),
+    el("p", { class: "muted", style: "margin:8px 0 0" }, "Fixed prices don't move, so they have no range. Dynamic is spot price + the supplier's markup, with a flat daily usage pattern; " +
+      "\"last 12 months\" shows what it would have cost with real prices."));
+}
+
+function renderHelp(d) {
+  const h = d.help_wanted;
+  if (!h) return;
+  if (!h.items.length) { fill("help", el("p", { class: "sub", style: "margin:0" }, "Nothing needed: every supplier has a complete price.")); return; }
+  fill("help",
+    el("p", { class: "sub", style: "margin-top:0" }, "The research agent can't get these prices (postcode forms or blocked automated browsers). ",
+      "You can add one in about 2 minutes: open the supplier's site, then add a line to ", link(h.edit_url, "manual.csv"), "."),
+    el("ul", {}, h.items.map(i => el("li", {}, i.url ? link(i.url, i.supplier) : i.supplier, el("span", { class: "muted" }, ` · ${i.missing}`)))),
+    el("details", {}, el("summary", {}, "Line format"),
+      el("pre", { style: "white-space:pre-wrap;font-size:12px" }, "supplier,valid_from,kwh_single,kwh_normal,kwh_dal,fixed_supply_eur_month,source_url,entered_on,notes\n" +
+        "<Supplier>,<valid from YYYY-MM-DD>,<€/kWh incl. tax>,,,<fixed €/month incl. VAT>,<page URL>,<today YYYY-MM-DD>,<note>")));
+}
+
+function renderOps(d) {
+  const o = d.ops;
+  if (!o) return;
+  const tile = (k, v, sub) => el("div", { class: "tile" }, el("div", { class: "k" }, k), el("div", { class: "v" }, v), el("div", { class: "d" }, sub));
+  const acc = o.forecast_accuracy || [];
+  fill("ops",
+    el("div", { class: "tiles" },
+      tile("Suppliers complete", `${o.trusted_complete}/${o.suppliers_total}`, `${o.complete} incl. unconfirmed`),
+      tile("Oldest check", o.max_days_since_check == null ? "—" : `${o.max_days_since_check} d`, o.never_checked ? `${o.never_checked} never checked` : "all checked"),
+      tile("Forecast error", acc.length ? `${(acc[0].mape * 100).toFixed(1)}%` : "—", acc.length ? `${acc[0].horizon_months} mo ahead, n=${acc[0].n}` : "scored after the first month")),
+    o.runs.length ? table(["Run", "Minutes", "Checklist before → after", "New versions"], o.runs.slice().reverse().map(r => el("tr", {},
+      el("td", {}, shortDate(r.date)), el("td", { class: "num" }, r.minutes), el("td", { class: "num" }, `${r.todo_before ?? "—"} → ${r.todo_after ?? "—"}`),
+      el("td", { class: "num" }, r.new_versions ?? "—"))), [1, 2, 3]) : el("p", { class: "muted" }, "Run log starts with the next research run."));
+}
+
 async function main() {
   let d;
   try {
@@ -512,7 +761,12 @@ async function main() {
     renderChart(d);
     let t; addEventListener("resize", () => { clearTimeout(t); t = setTimeout(() => renderChart(d), 150); });
   }
-  renderAdvice(d); renderTop(d); renderPeriods(d); renderSolar(d); renderBudget(d); renderInternet(d);
+  renderDecision(d); renderAdvice(d); renderUpcoming(d); renderForecast(d); renderOptions(d);
+  renderTop(d); renderPeriods(d); renderSolar(d); renderBudget(d); renderInternet(d); renderHelp(d); renderOps(d);
+  if (d.market) {
+    renderMarket(d);
+    let mt; addEventListener("resize", () => { clearTimeout(mt); mt = setTimeout(() => renderMarket(d), 150); });
+  }
 }
 main();
 </script>

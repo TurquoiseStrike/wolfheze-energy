@@ -8,7 +8,20 @@
     "annual_kwh": 3500,
     "dual_tariff_normal_share": 0.6,
     "annual_water_m3": 90,
-    "solar": false
+    "solar": false,
+    "monthly_profile_note": "Share of yearly kWh per month (Jan..Dec) for an all-electric house with a heat pump: ~60% in Nov-Mar.",
+    "monthly_profile": [0.14, 0.12, 0.11, 0.075, 0.055, 0.045, 0.045, 0.045, 0.055, 0.08, 0.105, 0.125],
+    "move_in": "2026-12-01"
+  },
+  "decisions": [
+    {"what": "Order internet (fiber activation takes 2-3 weeks)", "by": "2026-11-03"},
+    {"what": "Sign the energy contract, start date = key handover", "by": "2026-11-15"}
+  ],
+  "current_contract": {"supplier": null, "since": null, "switch_alert_eur_year": 50},
+  "taxes": {
+    "vat": 0.21,
+    "energy_tax_eur_kwh_ex_vat": {"2024": 0.1088, "2025": 0.10154, "2026": 0.09161},
+    "note": "Electricity energy tax, 1st bracket, excl. VAT (Belastingdienst). Add next year's rate when published; until then the latest year is assumed."
   },
   "internet": {
     "min_download_mbps": 100,
@@ -38,8 +51,11 @@
     "tracking_start": "2026-10-01",
     "min_suppliers_for_full_day": 5,
     "kwh_price_sane_min": 0.15,
-    "kwh_price_sane_max": 0.45
+    "kwh_price_sane_max": 0.60
   },
+  "dynamic_suppliers": [
+    "Frank Energie", "Tibber", "ANWB Energie", "Zonneplan", "EasyEnergy", "NextEnergy", "Vattenfall", "Eneco", "Essent"
+  ],
   "suppliers": [
     "Vattenfall",
     "Eneco",

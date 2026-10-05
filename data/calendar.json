@@ -1,0 +1,30 @@
+[
+ {
+  "date": "2026-12-01",
+  "scope": "household",
+  "title": "Move-in: energy and internet contracts start",
+  "impact": "Contracts should start on the key-handover date; note the meter readings that day.",
+  "source": ""
+ },
+ {
+  "date": "2027-01-01",
+  "scope": "regulation",
+  "title": "New energy tax rates (Belastingplan 2027)",
+  "impact": "Changes every supplier's all-in kWh price by the same amount; rate added to config.json once published.",
+  "source": "https://www.belastingdienst.nl"
+ },
+ {
+  "date": "2027-01-01",
+  "scope": "regulation",
+  "title": "New Liander grid tariffs",
+  "impact": "Same for every supplier; ACM publishes them in November/December.",
+  "source": "https://www.acm.nl"
+ },
+ {
+  "date": "2027-01-01",
+  "scope": "regulation",
+  "title": "Net metering (salderingsregeling) ends",
+  "impact": "Solar feed-in no longer offsets usage; each supplier's feed-in payment and fees decide what panels earn.",
+  "source": "https://www.rijksoverheid.nl/onderwerpen/energie-thuis/salderingsregeling"
+ }
+]
