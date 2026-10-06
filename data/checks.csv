@@ -17,3 +17,7 @@ date,supplier,result,notes
 2026-10-05,Greenchoice,unchanged,retry with browser: modelcontract page links only the stale 2026-05-18 tariff PDF; fixed charge for current version not found
 2026-10-05,Essent,unchanged,retry: klantenservice energieprijzen page confirms 0.31092 excl. VAT for variable; residential fixed charge not stated
 2026-10-05,Energiedirect,unchanged,retry: only keuze.nl reachable (timeout); fixed charge not found
+2026-10-06,Vattenfall,unchanged,"retry: tariff sheet URL patterns 404, modelcontract page links only conditions; fixed charge not found"
+2026-10-06,Greenchoice,unchanged,"browser: modelcontract page still links only 2026-05-18 sheet (added as backfill); Oct fixed charge not found"
+2026-10-06,Vandebron,unchanged,"browser: modelcontract page has no tariff sheet link; fixed charge not found"
+2026-10-06,United Consumers,not_found,"unitedconsumers.com modelcontract page 404; only comparison snippets for fixed contracts, no variable price read"
