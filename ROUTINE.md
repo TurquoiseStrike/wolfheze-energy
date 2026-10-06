@@ -22,6 +22,8 @@ python3 scripts/update.py --todo
 It prints today's work:
 - `NO TARIFF` / `NO FIXED CHARGE` — find the current tariff or its fixed charge.
 - `UPGRADE SOURCE` — the price is only from a comparison site; find the supplier's official tariff sheet.
+- `WEEKLY RETRY (blocked site)` — Mondays only, for suppliers in `sources.json` → `blocked`: one honest try via the
+  document routes, then move on. The owner fills these in via *Help wanted* (`data/manual.csv`).
 - `RESOLVE ASSUMPTION` — confirm what the row assumed (e.g. whether VAT is included) and add a corrected row.
 - `CHECK FOR NEW VERSION` — not checked for a week, or it's the start of a month.
 - `OFFERS CHECK DUE` — fixed 1/3-year and dynamic offers (weekly).
@@ -30,8 +32,7 @@ It prints today's work:
 
 **Work through every item except `BACKFILL` first.** You may only finish when `--todo` prints "nothing left", or each
 remaining non-backfill item has had a real attempt: at least two different sources, **including the browser** (see
-below). Suppliers that are listed as blocked in `sources.json` → `blocked` (e.g. bot protection) need only one quick
-retry per week. List every remaining item
+below). List every remaining item
 with what you tried in your final message. Ending after a few minutes with items left is a failed run. A run on a
 day that already has data continues the list. It never means "today is done".
 

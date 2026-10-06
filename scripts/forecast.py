@@ -120,8 +120,23 @@ def consumption(cfg, month_start):
     return hh["annual_kwh"] * hh["monthly_profile"][month_start.month - 1]
 
 
-def variable_path(versions, cfg, wholesale, start, months, scenario=0.0, lag=None):
-    """Monthly incl.-tax kWh prices for a variable contract from `start` for `months` months."""
+def last_change_month(anchor_month, m, change_months):
+    """The month the price was last allowed to change, at or before m (never before the anchor)."""
+    if not change_months:
+        return m
+    cur = m
+    while cur > anchor_month:
+        if cur.month in change_months:
+            return cur
+        cur = add_months(cur, -1)
+    return anchor_month
+
+
+def variable_path(versions, cfg, wholesale, start, months, scenario=0.0, lag=None, change_months=None):
+    """Monthly incl.-tax kWh prices for a variable contract from `start` for `months` months.
+
+    `change_months` (e.g. {1, 7}) limits when the supplier may change the price, as modelcontracts do;
+    between those months the price stays at its last level. None means it can change every month."""
     lag = DEFAULT_LAG if lag is None else lag
     out = []
     for i in range(months):
@@ -138,7 +153,8 @@ def variable_path(versions, cfg, wholesale, start, months, scenario=0.0, lag=Non
             out.append(price_incl(a_supply, cfg, m.year))
             continue
         margin = a_supply - wholesale.at(add_months(a_month, -lag))
-        out.append(price_incl(margin + wholesale.at(add_months(m, -lag), scenario), cfg, m.year))
+        step = last_change_month(a_month, m, change_months)
+        out.append(price_incl(margin + wholesale.at(add_months(step, -lag), scenario), cfg, m.year))
     return out
 
 
@@ -157,13 +173,13 @@ def path_cost(prices, cfg, start, fixed_month):
     return round(sum(p * consumption(cfg, add_months(start, i)) for i, p in enumerate(prices)) + 12 * fixed_month, 2)
 
 
-def first_year(versions, cfg, wholesale, start, fixed_month, lag=None):
+def first_year(versions, cfg, wholesale, start, fixed_month, lag=None, change_months=None):
     """Base/low/high first-year cost and the base monthly prices for a variable contract."""
-    base = variable_path(versions, cfg, wholesale, start, 12, 0.0, lag)
+    base = variable_path(versions, cfg, wholesale, start, 12, 0.0, lag, change_months)
     if base is None:
         return None
-    low = variable_path(versions, cfg, wholesale, start, 12, -1.0, lag)
-    high = variable_path(versions, cfg, wholesale, start, 12, 1.0, lag)
+    low = variable_path(versions, cfg, wholesale, start, 12, -1.0, lag, change_months)
+    high = variable_path(versions, cfg, wholesale, start, 12, 1.0, lag, change_months)
     return {"base": path_cost(base, cfg, start, fixed_month), "low": path_cost(low, cfg, start, fixed_month),
             "high": path_cost(high, cfg, start, fixed_month),
             "monthly_kwh_price": [round(p, 5) for p in base]}
@@ -174,17 +190,27 @@ def first_year(versions, cfg, wholesale, start, fixed_month, lag=None):
 FORECAST_FIELDS = ["made_on", "supplier", "target_month", "kwh_base", "kwh_low", "kwh_high"]
 
 
-def forecast_rows(tariffs, cfg, wholesale, made_on, eligible):
-    """Next 1-3 month kWh price forecasts for each eligible supplier, for the log."""
+def change_months_for(cfg, supplier, product_kind):
+    """Months a supplier may change its price, from its contract terms in config; None = any month."""
+    per = cfg.get("price_change_months", {})
+    if supplier in per:
+        return set(per[supplier])
+    return None  # no restriction known: the price can follow the market every month
+
+
+def forecast_rows(chains, cfg, wholesale, made_on):
+    """Next 1-3 month kWh price forecasts for each supplier, for the log.
+
+    `chains` maps supplier -> (the history of its current product, its product kind)."""
     rows = []
-    for supplier in eligible:
-        versions = tariffs[supplier]
+    for supplier, (versions, kind) in chains.items():
         pt = pass_through(versions, cfg, wholesale)
         lag = pt["lag_months"] if pt else None
+        cm = change_months_for(cfg, supplier, kind)
         start = add_months(date(made_on.year, made_on.month, 1), 1)
-        base = variable_path(versions, cfg, wholesale, start, 3, 0.0, lag)
-        low = variable_path(versions, cfg, wholesale, start, 3, -1.0, lag)
-        high = variable_path(versions, cfg, wholesale, start, 3, 1.0, lag)
+        base = variable_path(versions, cfg, wholesale, start, 3, 0.0, lag, cm)
+        low = variable_path(versions, cfg, wholesale, start, 3, -1.0, lag, cm)
+        high = variable_path(versions, cfg, wholesale, start, 3, 1.0, lag, cm)
         if base is None:
             continue
         for i in range(3):

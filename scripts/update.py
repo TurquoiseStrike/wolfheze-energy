@@ -227,16 +227,19 @@ def load_tariffs(rows, cfg, fixed_costs):
             "product_kind": row["product_kind"],
             "flagged": not (cmp_["kwh_price_sane_min"] <= kwh <= cmp_["kwh_price_sane_max"]),
         }
-        key = (supplier, version["valid_from"])
+        key = (supplier, version["valid_from"], version["product_kind"])
         if key not in latest or version["found_at"] >= latest[key]["found_at"]:
             latest[key] = version
 
     by_supplier = {}
-    for (supplier, _), v in sorted(latest.items(), key=lambda kv: kv[0][1]):
+    for (supplier, *_), v in sorted(latest.items(), key=lambda kv: (kv[0][1], kv[1]["found_at"])):
         by_supplier.setdefault(supplier, []).append(v)
     for versions in by_supplier.values():
-        prev = None
+        prev_by_kind = {}
         for v in versions:
+            # Borrow only from the same product (an unspecified kind counts as the same product).
+            kind = v["product_kind"]
+            prev = prev_by_kind.get(kind) or (prev_by_kind.get("") if kind else None)
             if v["fixed_supply_eur_month"] is None and prev and prev["fixed_supply_eur_month"] is not None \
                     and prev["valid_from"].year == v["valid_from"].year:
                 v["fixed_supply_eur_month"] = prev["fixed_supply_eur_month"]
@@ -250,7 +253,7 @@ def load_tariffs(rows, cfg, fixed_costs):
                 v["year1_annual_eur"] = round(annual - v["welcome_bonus_eur"], 2)
             else:
                 v["structural_annual_eur"] = v["year1_annual_eur"] = None
-            prev = v
+            prev_by_kind[kind] = v
     return by_supplier
 
 
@@ -308,15 +311,37 @@ def load_offers(rows, cfg, fixed_costs, today):
     return list(latest.values())
 
 
-def version_on(versions, day):
-    """The supplier's version valid on `day` (newest valid_from <= day), or None."""
-    current = None
-    for v in versions:
+def product_chains(versions, day):
+    """Newest version valid on `day` per product kind (modelcontract / standard / unspecified).
+
+    An unspecified ("") version is dropped once a version of a named kind is at least as new: it was
+    most likely the same product, recorded before product kinds were tracked."""
+    latest = {}
+    for v in versions:  # sorted by valid_from
         if v["valid_from"] <= day:
-            current = v
-        else:
-            break
-    return current
+            latest[v.get("product_kind", "")] = v
+    if "" in latest and any(k and latest[k]["valid_from"] >= latest[""]["valid_from"] for k in latest):
+        del latest[""]
+    return latest
+
+
+def version_on(versions, day):
+    """The supplier's version valid on `day`: the newest per product kind, and of those the cheapest
+    complete one (a new customer can pick either product). None if nothing is valid yet."""
+    latest = product_chains(versions, day)
+    if not latest:
+        return None
+    candidates = list(latest.values())
+    ranked = [v for v in candidates if rankable(v)]
+    if ranked:
+        return min(ranked, key=lambda v: (v["structural_annual_eur"], v["kwh_price"]))
+    return max(candidates, key=lambda v: (v["valid_from"], v["found_at"]))
+
+
+def same_product(versions, current):
+    """The history of the product `current` belongs to (for forecasts and pass-through)."""
+    kind = current.get("product_kind", "")
+    return [v for v in versions if v.get("product_kind", "") in ({kind, ""} if kind else {""})]
 
 
 def rankable(v):
@@ -595,12 +620,15 @@ def variable_forecasts(data, today, wholesale, start):
         current = version_on(versions, today)
         if not rankable(current):
             continue
-        pt = forecast.pass_through(versions, data.cfg, wholesale)
-        fy = forecast.first_year(versions, data.cfg, wholesale, start, current["fixed_supply_eur_month"],
-                                 pt["lag_months"] if pt else None)
+        chain = same_product(versions, current)
+        cm = forecast.change_months_for(data.cfg, supplier, current["product_kind"])
+        pt = forecast.pass_through(chain, data.cfg, wholesale)
+        fy = forecast.first_year(chain, data.cfg, wholesale, start, current["fixed_supply_eur_month"],
+                                 pt["lag_months"] if pt else None, cm)
         if fy is None:
             continue
         rows.append({"supplier": supplier, "contract_type": "variable", "source_type": current["source_type"],
+                     "product_kind": current["product_kind"], "change_months": sorted(cm) if cm else None,
                      "assumption": current["assumption"], "trusted": trusted(current), "pass_through": pt,
                      "today_annual_eur": current["structural_annual_eur"], **fy})
     return sorted(rows, key=lambda r: r["base"])
@@ -842,7 +870,14 @@ def todo(data, today):
     for s in cfg["suppliers"]:
         current = version_on(data.tariffs.get(s, []), today)
         last = checked.get(s)
-        hint = " [website blocks automated browsers: use the document routes in ROUTINE.md]" if s in blocked else ""
+        if s in blocked and (current is None or not current["complete"]):
+            # The agent can't get past these sites; the owner fills them via Help wanted. One retry a week.
+            if today.weekday() == 0:
+                missing = "price and fixed charge" if current is None else "fixed charge"
+                items.append(f"WEEKLY RETRY (blocked site): {s} {missing}; try the document routes in ROUTINE.md "
+                             "once, then leave it for the owner (Help wanted)")
+            continue
+        hint = ""
         if current is None:
             items.append(f"NO TARIFF: {s} has no tariff version valid today{hint}")
         elif not current["complete"]:
@@ -874,10 +909,12 @@ def todo(data, today):
         stamp = load_json(data.dir / name, {}).get("checked_at")
         if not stamp or (today - date.fromisoformat(stamp)).days > 31:
             items.append(f"MONTHLY CHECK DUE: {name} (checked_at {stamp or 'missing'})")
-    next_year = str(today.year + 1)
-    if today.month >= 10 and next_year not in cfg["taxes"]["energy_tax_eur_kwh_ex_vat"]:
-        items.append(f"TAX TABLE: add the {next_year} electricity energy tax (1st bracket, excl. VAT) to config.json "
-                     "taxes once published (Belastingplan), and the matching calendar.json event")
+    # The Belastingdienst publishes next year's final rates in December; before that, sources conflict.
+    table = cfg["taxes"]["energy_tax_eur_kwh_ex_vat"]
+    due = str(today.year + 1) if today.month == 12 else str(today.year)
+    if due not in table and (today.month == 12 or due == str(today.year)):
+        items.append(f"TAX TABLE: add the {due} electricity energy tax (1st bracket, excl. VAT) to config.json "
+                     "taxes from the Belastingdienst's published rates, and update the calendar.json event")
 
     tracking = date.fromisoformat(cfg["comparison"]["tracking_start"])
     for s in cfg["suppliers"]:
@@ -894,8 +931,12 @@ def log_forecast(data, today, market):
     if any(r["made_on"] == today.isoformat() for r in data.forecast_log):
         return 0
     wholesale = forecast.Wholesale(market, today)
-    eligible = [s for s, vs in data.tariffs.items() if trusted(version_on(vs, today))]
-    rows = forecast.forecast_rows(data.tariffs, data.cfg, wholesale, today, eligible)
+    chains = {}
+    for s, vs in data.tariffs.items():
+        current = version_on(vs, today)
+        if trusted(current):
+            chains[s] = (same_product(vs, current), current["product_kind"])
+    rows = forecast.forecast_rows(chains, data.cfg, wholesale, today)
     new_file = not path.exists()
     with path.open("a", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=FORECAST_LOG_FIELDS, lineterminator="\n")

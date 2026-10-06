@@ -53,6 +53,12 @@
     "kwh_price_sane_min": 0.15,
     "kwh_price_sane_max": 0.60
   },
+  "price_change_months_note": "Months in which a supplier may change its variable price (from its contract terms). Only suppliers whose terms restrict this are listed; all others can change any month.",
+  "price_change_months": {
+    "Budget Energie": [1, 4, 7, 10],
+    "Essent": [1, 7],
+    "Energiedirect": [1, 7]
+  },
   "dynamic_suppliers": [
     "Frank Energie", "Tibber", "ANWB Energie", "Zonneplan", "EasyEnergy", "NextEnergy", "Vattenfall", "Eneco", "Essent"
   ],

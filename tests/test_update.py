@@ -273,6 +273,32 @@ class ManualAndAssumptions(Base):
         self.assertIn("RESOLVE ASSUMPTION: A", "\n".join(update.todo(self.load(), date(2026, 10, 5))))
 
 
+class Products(Base):
+    def test_cheapest_complete_product_counts(self):
+        # Older but complete and cheaper modelcontract vs newer standard product without a fixed charge.
+        self.tariffs([tariff("A", "2026-05-18", "0.26", product_kind="modelcontract"),
+                      tariff("A", "2026-10-04", "0.37", fixed="", product_kind="standard", source_type="comparison")])
+        v = update.version_on(self.load().tariffs["A"], date(2026, 10, 6))
+        self.assertEqual((v["product_kind"], v["kwh_price"]), ("modelcontract", 0.26))
+
+    def test_same_date_products_are_both_kept(self):
+        self.tariffs([tariff("A", "2026-10-01", "0.30", product_kind="modelcontract"),
+                      tariff("A", "2026-10-01", "0.25", product_kind="standard")])
+        self.assertEqual(len(self.load().tariffs["A"]), 2)
+        self.assertEqual(update.version_on(self.load().tariffs["A"], date(2026, 10, 6))["product_kind"], "standard")
+
+    def test_unspecified_row_is_superseded_by_a_newer_named_one(self):
+        self.tariffs([tariff("A", "2026-10-01", "0.20"),  # recorded before product kinds existed
+                      tariff("A", "2026-10-04", "0.30", product_kind="modelcontract")])
+        self.assertEqual(update.version_on(self.load().tariffs["A"], date(2026, 10, 6))["kwh_price"], 0.30)
+
+    def test_fixed_charge_is_only_borrowed_from_the_same_product(self):
+        self.tariffs([tariff("A", "2026-07-01", fixed="9", product_kind="modelcontract"),
+                      tariff("A", "2026-10-01", fixed="", product_kind="standard")])
+        std = [v for v in self.load().tariffs["A"] if v["product_kind"] == "standard"][0]
+        self.assertFalse(std["complete"])
+
+
 class Announced(Base):
     def test_future_version_is_announced_with_next_ranking(self):
         self.tariffs([tariff("A", "2026-10-01", "0.20"), tariff("A", "2026-11-01", "0.30"),
@@ -301,6 +327,18 @@ class Forecasts(unittest.TestCase):
         path = forecast.variable_path(self.versions(("2026-10-01", 0.30)), CFG, w, date(2026, 11, 1), 2, lag=2)
         self.assertAlmostEqual(path[0], 0.30)  # Nov follows Sept wholesale: unchanged
         self.assertAlmostEqual(path[1], 0.30 + 0.05 * 1.21)  # Dec follows Oct: +0.05 ex VAT
+
+    def test_restricted_change_months_hold_the_price(self):
+        # Wholesale jumped in October; a supplier that may only change on 1 Jan / 1 Jul keeps its price until January.
+        mkt = flat_market(level=0.15, monthly={"2026-06": 0.10, "2026-07": 0.10, "2026-08": 0.10, "2026-09": 0.10})
+        w = forecast.Wholesale(mkt, date(2026, 10, 5))
+        path = forecast.variable_path(self.versions(("2026-07-01", 0.30)), CFG, w, date(2026, 11, 1), 3, lag=1,
+                                      change_months={1, 7})
+        self.assertAlmostEqual(path[0], 0.30)  # Nov
+        self.assertAlmostEqual(path[1], 0.30)  # Dec
+        self.assertAlmostEqual(path[2], 0.30 + 0.05 * 1.21)  # Jan: follows Dec wholesale (lag 1)
+        self.assertEqual(forecast.change_months_for({"price_change_months": {"A": [1, 7]}}, "A", "modelcontract"), {1, 7})
+        self.assertIsNone(forecast.change_months_for({}, "B", "modelcontract"))
 
     def test_announced_version_anchors_the_path(self):
         w = forecast.Wholesale(flat_market(), date(2026, 10, 5))
@@ -397,8 +435,20 @@ class OffersAndDecision(Base):
         self.tariffs([tariff("A", "2026-10-01")])
         text = "\n".join(update.todo(self.load(), date(2026, 10, 5)))
         self.assertIn("OFFERS CHECK DUE: fixed_1y", text)
-        self.assertIn("TAX TABLE: add the 2027", text)
+        self.assertNotIn("TAX TABLE", text)  # not before December: sources conflict until the final rates are out
+        self.assertIn("TAX TABLE: add the 2027", "\n".join(update.todo(self.load(), date(2026, 12, 2))))
+        self.assertIn("TAX TABLE: add the 2027", "\n".join(update.todo(self.load(), date(2027, 1, 5))))
         self.assertIn("BACKFILL (low priority", text)
+
+    def test_blocked_supplier_is_a_weekly_retry(self):
+        self.tariffs([tariff("A", "2026-10-01", fixed="")])
+        (self.dir / "sources.json").write_text(json.dumps({"blocked": {"A": "bot protection"}}))
+        tuesday = "\n".join(update.todo(self.load(), date(2026, 10, 6)))
+        monday = "\n".join(update.todo(self.load(), date(2026, 10, 12)))
+        self.assertNotIn("NO FIXED CHARGE: A", tuesday)
+        self.assertNotIn("WEEKLY RETRY", tuesday)
+        self.assertIn("WEEKLY RETRY (blocked site): A fixed charge", monday)
+        self.assertEqual(update.help_wanted(self.load(), date(2026, 10, 6))["items"][0]["supplier"], "A")
 
     def test_help_wanted_lists_incomplete_suppliers(self):
         self.tariffs([tariff("A", "2026-10-01", fixed="")])
