@@ -23,3 +23,4 @@ date,supplier,result,notes
 2026-10-06,United Consumers,not_found,"unitedconsumers.com modelcontract page 404; only comparison snippets for fixed contracts, no variable price read"
 2026-10-07,Coolblue Energie,new_version,VAT assumption resolved: contractvoorwaarden state amounts incl. btw
 2026-10-08,Mega,new_version,backfill 09-2026 row from monthly table
+2026-10-09,Innova Energie,new_version,backfill 2025-01..2026-01 plus announced 2026-11-01 from archived tariff sheets
