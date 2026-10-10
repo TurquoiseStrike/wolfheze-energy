@@ -4,3 +4,4 @@ date,started_at,finished_at,todo_before,todo_after,new_versions,notes
 2026-10-07,2026-10-07T05:11:55+00:00,2026-10-07T05:14:13+00:00,12,11,1,"Coolblue VAT assumption resolved via contractvoorwaarden (incl. btw); only BACKFILL items left, not attempted this run"
 2026-10-08,2026-10-08T05:11:54+00:00,2026-10-08T05:12:36+00:00,11,10,1,"Only BACKFILL items left. Mega 09-2026 backfill added (page has no earlier history); Essent newsroom has no earlier tariff data; other backfills not found in time"
 2026-10-09,2026-10-09T05:11:50+00:00,2026-10-09T05:13:34+00:00,10,9,5,"Only BACKFILL left. Innova: 4 backfill versions (2025-01..2026-01) + announced 2026-11-01 standard variable from archived tariff sheets; other backfills (Delta, Vattenfall, Eneco, Essent etc.) not found"
+2026-10-10,2026-10-10T05:11:04+00:00,2026-10-10T05:11:25+00:00,9,9,0,"Only BACKFILL left; searched Budget Energie and Oxxio history (no official sheets found); nothing added"
