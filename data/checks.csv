@@ -24,3 +24,7 @@ date,supplier,result,notes
 2026-10-07,Coolblue Energie,new_version,VAT assumption resolved: contractvoorwaarden state amounts incl. btw
 2026-10-08,Mega,new_version,backfill 09-2026 row from monthly table
 2026-10-09,Innova Energie,new_version,backfill 2025-01..2026-01 plus announced 2026-11-01 from archived tariff sheets
+2026-10-11,Eneco,new_version,official page now 0.37723 single
+2026-10-11,Oxxio,new_version,"official page now 0.36956 single, fixed 9.49"
+2026-10-11,Pure Energie,unchanged,21-9-2026 sheet still current
+2026-10-11,Delta Energie,unchanged,1-10-2026 sheet still current
