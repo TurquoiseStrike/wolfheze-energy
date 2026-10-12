@@ -28,3 +28,7 @@ date,supplier,result,notes
 2026-10-11,Oxxio,new_version,"official page now 0.36956 single, fixed 9.49"
 2026-10-11,Pure Energie,unchanged,21-9-2026 sheet still current
 2026-10-11,Delta Energie,unchanged,1-10-2026 sheet still current
+2026-10-12,Vattenfall,not_found,"weekly retry: tarief sheet routes 404; web search finds only terms PDFs without prices"
+2026-10-12,Essent,unchanged,"weekly retry: fixed charge still not on a consumer sheet; klantenservice page confirms 0.31092 single (our row 0.3109)"
+2026-10-12,Vandebron,not_found,"weekly retry: no public tarievenblad found"
+2026-10-12,United Consumers,not_found,"weekly retry: no public variable tariff found"
