@@ -32,3 +32,5 @@ date,supplier,result,notes
 2026-10-12,Essent,unchanged,"weekly retry: fixed charge still not on a consumer sheet; klantenservice page confirms 0.31092 single (our row 0.3109)"
 2026-10-12,Vandebron,not_found,"weekly retry: no public tarievenblad found"
 2026-10-12,United Consumers,not_found,"weekly retry: no public variable tariff found"
+2026-10-13,Budget Energie,unchanged,"budgetthuis.nl modelcontract page re-read: variable 0.32865 incl. tax, fixed 9.99/month, as recorded"
+2026-10-13,Greenchoice,unchanged,modelcontract page still links the 18-05-2026 sheet; keuze.nl variable 0.37350 matches our row
