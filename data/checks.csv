@@ -37,3 +37,4 @@ date,supplier,result,notes
 2026-10-14,Coolblue Energie,unchanged,Variable modelcontract 0.4221811 / 10.99 still on official page
 2026-10-15,Mega,unchanged,"Monthly table re-read: 11-2026 0.42215 / 10-2026 0.35534 as recorded"
 2026-10-16,Innova Energie,unchanged,Variable modelcontract sheet per 01-10-2026 still current (0.31861 single; fixed 222.64/yr); new 1-year fixed sheet per 16-10-2026 recorded in offers
+2026-10-17,Essent,new_version,Backfill: 1 Jul 2026 and 1 Apr 2026 variable rows from energievergelijk.nl (comparison)
