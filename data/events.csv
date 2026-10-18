@@ -6,3 +6,4 @@ date,scope,supplier,type,summary,url
 2026-10-09,market,Innova Energie,price_change,Innova standard variable rises to EUR 0.31937/kWh single (incl tax/VAT) per 2026-11-01,https://www.innovaenergie.nl/wp-content/uploads/2026/09/Tariefblad-Var-Var-01-11-2026-Innova-Energie.pdf
 2026-10-01,supplier,Energiedirect,price_change,Energiedirect standard variable rises to EUR 0.29685/kWh single incl tax/VAT (from 0.25893) per 2026-10-01,https://www.energiedirect.nl/klantenservice/alles-over-de-energieprijzen
 2026-07-01,supplier,Essent,price_change,Essent raised its variable electricity tariff from 1 Jul 2026 to EUR 0.2691/kWh (from 0.23808),https://www.energievergelijk.nl/nieuws/essent-verhoogt-variabele-tarieven-voor-stroom-en-gas-per-1-juli-2026
+2026-10-18,supplier,Eneco,price_change,"Eneco and Oxxio variable modelcontract prices rose again mid-month: Eneco single 0.37723 -> 0.39036, Oxxio 0.36956 -> 0.38207 EUR/kWh",https://www.eneco.nl/duurzame-energie/modelcontract/
