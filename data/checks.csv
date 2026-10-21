@@ -49,3 +49,4 @@ date,supplier,result,notes
 2026-10-19,United Consumers,not_found,Weekly retry: site fails TLS/unreachable; no public variable tariff
 2026-10-20,Budget Energie,new_version,"Price changed vs 2026-10-04 row (0.32865 -> 0.35285), fixed 10.99"
 2026-10-20,Greenchoice,unchanged,keuze.nl shows 0.37350/0.38560 (updated 20 Oct); official sheet still 18 May
+2026-10-21,Coolblue Energie,unchanged,Official modelcontract page: variable single 0.4221811 / fixed 10.99 unchanged; 1y fixed offer changed (offers.csv)
