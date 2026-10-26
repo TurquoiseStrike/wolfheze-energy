@@ -56,3 +56,8 @@ date,supplier,result,notes
 2026-10-25,Oxxio,new_version,Official page: 0.39090 single (was 0.38207)
 2026-10-25,Pure Energie,unchanged,modelcontract page still links the variable sheet per 21-9-2026 (already recorded)
 2026-10-25,Delta Energie,unchanged,variable sheet per 1 Oct 2026 re-read: 9.49/month fixed; no newer sheet linked
+2026-10-26,Vattenfall,not_found,weekly retry: modelcontract page links only product terms PDFs (2026_04_01) and 2025-01 rate sheet outdated; prices only behind postcode form
+2026-10-26,Vandebron,not_found,weekly retry: modelcontract page still links only terms PDFs; no tarievenblad
+2026-10-26,Energiedirect,not_found,weekly retry: modelcontract page URL 404; tariffs only in postcode window
+2026-10-26,United Consumers,not_found,weekly retry: modelcontract page 404
+2026-10-26,Essent,not_found,weekly retry: press release page reachable but no new fixed charge; no consumer variable sheet found
