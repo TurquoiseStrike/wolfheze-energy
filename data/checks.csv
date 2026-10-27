@@ -61,3 +61,5 @@ date,supplier,result,notes
 2026-10-26,Energiedirect,not_found,weekly retry: modelcontract page URL 404; tariffs only in postcode window
 2026-10-26,United Consumers,not_found,weekly retry: modelcontract page 404
 2026-10-26,Essent,not_found,weekly retry: press release page reachable but no new fixed charge; no consumer variable sheet found
+2026-10-27,Budget Energie,new_version,corrected 10-20 row (it had read the 1y fixed block); variable is 0.32865 / 9.99 per month
+2026-10-27,Greenchoice,unchanged,keuze.nl variabel normaal 0.37350 dal 0.38560 matches recorded; official modelcontract page still links the 18 May sheet
