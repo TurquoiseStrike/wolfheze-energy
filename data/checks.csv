@@ -76,3 +76,17 @@ date,supplier,result,notes
 2026-11-01,Coolblue Energie,unchanged,official page (updated 29 Oct): onbepaalde tijd 0.4221811 already recorded
 2026-11-01,Mega,unchanged,official table 11-2026 and 12-2026 already recorded
 2026-11-01,Innova Energie,unchanged,1 Nov 2026 version already recorded
+2026-11-02,Eneco,unchanged,official modelcontract page still 0.42218 single
+2026-11-02,Oxxio,unchanged,official modelcontract page still 0.40876 single
+2026-11-02,Budget Energie,unchanged,official variable block 0.32865 / 9.99 month still current
+2026-11-02,Coolblue Energie,unchanged,official page 0.4221811 already recorded
+2026-11-02,Mega,unchanged,official table 11-2026 and 12-2026 already recorded
+2026-11-02,Greenchoice,unchanged,official page still links 2026-05-18 sheet
+2026-11-02,Pure Energie,unchanged,official modelcontract page still links 21-9-2026 variable sheet
+2026-11-02,Delta Energie,unchanged,no newer sheet found on modelcontract page
+2026-11-02,Innova Energie,unchanged,1 Nov 2026 version already recorded
+2026-11-02,Vattenfall,not_found,weekly retry: modelcontract page needs postcode form; keuze.nl still 0.32841 already recorded
+2026-11-02,Vandebron,not_found,weekly retry: no tariff sheet; keuze.nl 0.41659 already recorded
+2026-11-02,Energiedirect,unchanged,customer-service page still 0.29685 from 1 Oct; keuze 0.38185 normal already recorded
+2026-11-02,United Consumers,not_found,weekly retry: no public tariff; not listed on keuze.nl
+2026-11-02,Essent,new_version,keuze.nl comparison 0.38850 (official press release says 0.3109); assumption recorded
