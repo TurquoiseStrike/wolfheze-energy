@@ -90,3 +90,13 @@ date,supplier,result,notes
 2026-11-02,Energiedirect,unchanged,customer-service page still 0.29685 from 1 Oct; keuze 0.38185 normal already recorded
 2026-11-02,United Consumers,not_found,weekly retry: no public tariff; not listed on keuze.nl
 2026-11-02,Essent,new_version,keuze.nl comparison 0.38850 (official press release says 0.3109); assumption recorded
+2026-11-03,Vandebron,new_version,keuze.nl variabel 0.44747 (comparison only, was 0.41659)
+2026-11-03,Eneco,unchanged,official page 0.42218 single, matches
+2026-11-03,Oxxio,unchanged,official page 0.40876 matches
+2026-11-03,Coolblue Energie,unchanged,official page 0.4221811 matches
+2026-11-03,Mega,unchanged,price table 11-2026/12-2026 already recorded
+2026-11-03,Budget Energie,unchanged,page unreadable via browser today; 27 Oct row stands
+2026-11-03,Greenchoice,unchanged,official page still links 2026-05-18 sheet; keuze 0.37350 already recorded
+2026-11-03,Pure Energie,unchanged,official page still links 21-9-2026 sheet
+2026-11-03,Delta Energie,unchanged,latest variable sheet still 1 Oct 2026
+2026-11-03,Innova Energie,unchanged,latest variable tariff sheet link 1 Oct; 1 Nov row stands
