@@ -101,3 +101,8 @@ date,supplier,result,notes
 2026-11-03,Delta Energie,unchanged,latest variable sheet still 1 Oct 2026
 2026-11-03,Innova Energie,unchanged,latest variable tariff sheet link 1 Oct; 1 Nov row stands
 2026-11-04,Budget Energie,new_version,backfill 2026-01-22 from energievergelijk article
+2026-11-09,Vattenfall,unchanged,keuze.nl energietarieven 9 Nov variabel 0.32841 matches recorded; fixed charge still not public
+2026-11-09,Vandebron,unchanged,keuze.nl 9 Nov variabel 0.44747 matches 3 Nov row; fixed charge not found
+2026-11-09,Essent,unchanged,keuze.nl 9 Nov variabel 0.38850 matches recorded; fixed charge not public
+2026-11-09,Energiedirect,unchanged,energiedirect.nl page still shows 1 Oct price 0.29685; keuze 0.38185 already recorded
+2026-11-09,United Consumers,not_found,no variable tariff on keuze.nl (only 1y/3y fixed); modelcontract page still not public
