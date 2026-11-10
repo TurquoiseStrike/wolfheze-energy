@@ -106,3 +106,11 @@ date,supplier,result,notes
 2026-11-09,Essent,unchanged,keuze.nl 9 Nov variabel 0.38850 matches recorded; fixed charge not public
 2026-11-09,Energiedirect,unchanged,energiedirect.nl page still shows 1 Oct price 0.29685; keuze 0.38185 already recorded
 2026-11-09,United Consumers,not_found,no variable tariff on keuze.nl (only 1y/3y fixed); modelcontract page still not public
+2026-11-10,Eneco,new_version,official modelcontract page now 0.42828 single (was 0.42218)
+2026-11-10,Oxxio,new_version,official modelcontract page now 0.41422 single (was 0.40876)
+2026-11-10,Delta Energie,unchanged,official 1 Oct 2026 PDF still current: 0.29819
+2026-11-10,Pure Energie,unchanged,official sheet still dated 21-9-2026
+2026-11-10,Innova Energie,unchanged,1 Oct sheet; 1 Nov version already recorded
+2026-11-10,Mega,unchanged,price history page: 12-2026 and 11-2026 already recorded
+2026-11-10,Coolblue Energie,unchanged,official modelcontract page variable 0.4221811 same as recorded
+2026-11-10,Greenchoice,unchanged,official modelcontract sheet still 18 May 2026
