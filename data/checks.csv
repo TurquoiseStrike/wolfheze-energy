@@ -114,3 +114,4 @@ date,supplier,result,notes
 2026-11-10,Mega,unchanged,price history page: 12-2026 and 11-2026 already recorded
 2026-11-10,Coolblue Energie,unchanged,official modelcontract page variable 0.4221811 same as recorded
 2026-11-10,Greenchoice,unchanged,official modelcontract sheet still 18 May 2026
+2026-11-11,Budget Energie,unchanged,variable block 0.32865 / 9.99 month still on modelcontract page (page JSON updatedAt 2026-04-23)
