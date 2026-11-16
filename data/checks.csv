@@ -115,3 +115,8 @@ date,supplier,result,notes
 2026-11-10,Coolblue Energie,unchanged,official modelcontract page variable 0.4221811 same as recorded
 2026-11-10,Greenchoice,unchanged,official modelcontract sheet still 18 May 2026
 2026-11-11,Budget Energie,unchanged,variable block 0.32865 / 9.99 month still on modelcontract page (page JSON updatedAt 2026-04-23)
+2026-11-16,Vattenfall,not_found,weekly retry: modelcontract/news pages and PDF routes give no readable official price+fixed charge (Vattenfall tarieven 404; Vandebron page data unmappable to products; Essent/Energiedirect tariff window blocked)
+2026-11-16,Essent,not_found,weekly retry: modelcontract/news pages and PDF routes give no readable official price+fixed charge (Vattenfall tarieven 404; Vandebron page data unmappable to products; Essent/Energiedirect tariff window blocked)
+2026-11-16,Vandebron,not_found,weekly retry: modelcontract/news pages and PDF routes give no readable official price+fixed charge (Vattenfall tarieven 404; Vandebron page data unmappable to products; Essent/Energiedirect tariff window blocked)
+2026-11-16,Energiedirect,not_found,weekly retry: modelcontract/news pages and PDF routes give no readable official price+fixed charge (Vattenfall tarieven 404; Vandebron page data unmappable to products; Essent/Energiedirect tariff window blocked)
+2026-11-16,United Consumers,not_found,weekly retry: modelcontract/news pages and PDF routes give no readable official price+fixed charge (Vattenfall tarieven 404; Vandebron page data unmappable to products; Essent/Energiedirect tariff window blocked)

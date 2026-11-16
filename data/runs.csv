@@ -41,3 +41,4 @@ date,started_at,finished_at,todo_before,todo_after,new_versions,notes
 2026-11-13,2026-11-13T05:09:13+00:00,2026-11-13T05:09:25+00:00,7,7,0,"Only BACKFILL left (no non-backfill items); same undated-history gap as previous runs, no verifiable dated sources, nothing added"
 2026-11-14,2026-11-14T05:08:59+00:00,2026-11-14T05:12:00+00:00,9,7,0,"Offers check: 22 fixed_1y/3y rows from keuze.nl table (updated 14 Nov); only BACKFILL left, no verifiable dated history found in earlier runs"
 2026-11-15,2026-11-15T05:08:50+00:00,2026-11-15T05:09:41+00:00,8,7,0,"Offers check: 4 dynamic offers re-read on keuze.nl (updated 15 Nov), markups unchanged; only BACKFILL left, no verifiable dated history found in earlier runs"
+2026-11-16,2026-11-16T05:09:07+00:00,2026-11-16T05:10:49+00:00,13,13,0,"Monday: blocked-supplier retries failed again (logged not_found); internet re-read: providers.nl and KPN unchanged, delta.nl needs JS and returned nothing; only BACKFILL/blocked left"
