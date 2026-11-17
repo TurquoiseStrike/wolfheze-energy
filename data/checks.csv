@@ -120,3 +120,11 @@ date,supplier,result,notes
 2026-11-16,Vandebron,not_found,weekly retry: modelcontract/news pages and PDF routes give no readable official price+fixed charge (Vattenfall tarieven 404; Vandebron page data unmappable to products; Essent/Energiedirect tariff window blocked)
 2026-11-16,Energiedirect,not_found,weekly retry: modelcontract/news pages and PDF routes give no readable official price+fixed charge (Vattenfall tarieven 404; Vandebron page data unmappable to products; Essent/Energiedirect tariff window blocked)
 2026-11-16,United Consumers,not_found,weekly retry: modelcontract/news pages and PDF routes give no readable official price+fixed charge (Vattenfall tarieven 404; Vandebron page data unmappable to products; Essent/Energiedirect tariff window blocked)
+2026-11-17,Eneco,new_version,official page price dropped from 0.42828 to 0.39243 single
+2026-11-17,Oxxio,new_version,official page price dropped from 0.41422 to 0.39021 single
+2026-11-17,Greenchoice,unchanged,official sheet still valid 18-05-2026 (stale); no newer official sheet; comparison row 0.3735 stands
+2026-11-17,Pure Energie,unchanged,sheet per 21-9-2026 still current
+2026-11-17,Delta Energie,unchanged,no newer sheet than 1 Oct 2026 found
+2026-11-17,Coolblue Energie,unchanged,modelcontract page variabel table unchanged
+2026-11-17,Mega,unchanged,price table shows 11-2026 and 12-2026 already recorded
+2026-11-17,Innova Energie,unchanged,variabel tariefblad still per 01-10-2026; already have 11-01 row
