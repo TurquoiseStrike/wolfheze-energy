@@ -43,3 +43,4 @@ date,started_at,finished_at,todo_before,todo_after,new_versions,notes
 2026-11-15,2026-11-15T05:08:50+00:00,2026-11-15T05:09:41+00:00,8,7,0,"Offers check: 4 dynamic offers re-read on keuze.nl (updated 15 Nov), markups unchanged; only BACKFILL left, no verifiable dated history found in earlier runs"
 2026-11-16,2026-11-16T05:09:07+00:00,2026-11-16T05:10:49+00:00,13,13,0,"Monday: blocked-supplier retries failed again (logged not_found); internet re-read: providers.nl and KPN unchanged, delta.nl needs JS and returned nothing; only BACKFILL/blocked left"
 2026-11-17,2026-11-17T05:08:53+00:00,2026-11-17T05:12:46+00:00,15,7,2,"Eneco and Oxxio official pages show lower prices (new versions); Greenchoice/Pure/Delta/Coolblue/Mega/Innova unchanged; only BACKFILL left"
+2026-11-18,2026-11-18T05:08:57+00:00,2026-11-18T05:09:15+00:00,8,7,0,Budget Energie unchanged; only backfill items left (not attempted)
