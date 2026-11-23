@@ -129,3 +129,7 @@ date,supplier,result,notes
 2026-11-17,Mega,unchanged,price table shows 11-2026 and 12-2026 already recorded
 2026-11-17,Innova Energie,unchanged,variabel tariefblad still per 01-10-2026; already have 11-01 row
 2026-11-18,Budget Energie,unchanged,modelcontract page still shows enkeltarief 0.35285 incl; no new version
+2026-11-23,Vattenfall,not_found,weekly retry: modelcontract page only links terms PDFs (no tariff sheet); no fixed charge found
+2026-11-23,Essent,not_found,weekly retry: searched essent.nl/gaslicht PDFs; only business/fixed-contract sheets; consumer variable sheet not found
+2026-11-23,Energiedirect,not_found,weekly retry: guessed sheet URLs 404; no fixed charge found
+2026-11-23,United Consumers,not_found,"weekly retry: search found only fixed-product terms, no variable tariff/fixed charge"
