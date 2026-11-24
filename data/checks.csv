@@ -133,3 +133,12 @@ date,supplier,result,notes
 2026-11-23,Essent,not_found,weekly retry: searched essent.nl/gaslicht PDFs; only business/fixed-contract sheets; consumer variable sheet not found
 2026-11-23,Energiedirect,not_found,weekly retry: guessed sheet URLs 404; no fixed charge found
 2026-11-23,United Consumers,not_found,"weekly retry: search found only fixed-product terms, no variable tariff/fixed charge"
+2026-11-24,Eneco,new_version,kWh single 0.40129 (was 0.39243)
+2026-11-24,Oxxio,new_version,kWh single 0.39161 (was 0.39021)
+2026-11-24,Greenchoice,unchanged,"tariff sheet link still tarieven-modelcontract-20260518.pdf, same prices"
+2026-11-24,Pure Energie,unchanged,sheet per 21-9-2026 still current
+2026-11-24,Delta Energie,unchanged,sheet per 1 Oct 2026 still current
+2026-11-24,Coolblue Energie,unchanged,page updated 20 Nov; variable table unchanged 0.4221811
+2026-11-24,Mega,unchanged,12-2026 row already recorded; nothing newer
+2026-11-24,Innova Energie,unchanged,newest sheet still 1 Nov 2026
+2026-11-24,Vandebron,not_found,"upgrade source: modelcontract page links no tarievenblad, only terms PDFs; stays comparison-sourced"
