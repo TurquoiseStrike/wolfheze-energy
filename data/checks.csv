@@ -145,3 +145,4 @@ date,supplier,result,notes
 2026-11-25,Budget Energie,unchanged,modelcontract page variable block still 0.21780+0.11085=0.32865 single; fixed 9.99/month
 2026-11-25,Vandebron,not_found,"upgrade source retried (modelcontract page, variabel page via browser, search, gaslicht): tarievenblad not linked, only terms PDFs; stays comparison-sourced"
 2026-11-26,Vandebron,not_found,official tarievenblad still not linked (curl + search + browser on modelcontract pages)
+2026-11-27,Vandebron,unchanged,official modelcontract page is undated and shows 0.34536 incl tax vs keuze 0.44747; looks stale so not recorded; comparison row kept

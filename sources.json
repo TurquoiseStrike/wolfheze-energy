@@ -34,7 +34,8 @@
       "https://www.greenchoice.nl/stroom-en-gas/modelcontract/"
     ],
     "Vandebron": [
-      "https://www.keuze.nl/energie/energieleveranciers/vandebron"
+      "https://www.keuze.nl/energie/energieleveranciers/vandebron",
+      "https://vandebron.nl/modelcontract"
     ],
     "Essent": [
       "https://www.essent.nl/over-essent/nieuws/essent-past-variabele-tarieven-aan-per-1-oktober-2026/",
@@ -78,5 +79,8 @@
   },
   "not_usable": {
     "samenom.nl Tarieven-Modelcontract-Vast-en-Variabel-DEF.pdf": "comes up in searches for Vandebron but is SamenOM's own tariff sheet"
+  },
+  "notes": {
+    "Vandebron": "vandebron.nl/modelcontract embeds a JSON price table (turbo-stream in page HTML, no PDF, undated): variable electricity delivery 0.23451 incl VAT + energy tax 0.11085 = 0.34536/kWh, fixed fee 0.34497/day. Differs strongly from keuze.nl (0.447) and page text looks stale (mentions a lock until 1 July 2026), so NOT used as a tariff row."
   }
 }
